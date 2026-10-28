@@ -4,7 +4,7 @@ Only synthetic data and documentary capability candidates are validated here.
 """
 
 import json
-from datetime import datetime, time, timezone
+from datetime import UTC, datetime, time
 from decimal import Decimal
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -67,7 +67,7 @@ def test_synthetic_daily_timestamp_is_anchored_to_kst_session_date() -> None:
     assert candle["timestamp"] == int(kst_anchor.timestamp() * 1000)
     # KST midnight is 15:00 UTC on the *previous* calendar day.
     assert datetime.fromtimestamp(
-        candle["timestamp"] / 1000, tz=timezone.utc
+        candle["timestamp"] / 1000, tz=UTC
     ).date().isoformat() == "2026-10-27"
 
     for key in ("open", "high", "low", "close"):
