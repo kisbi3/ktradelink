@@ -11,7 +11,6 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = ROOT / "docs" / "specifications"
 FIXTURES = ROOT / "tests" / "fixtures" / "spec"
