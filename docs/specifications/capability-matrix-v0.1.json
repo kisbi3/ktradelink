@@ -1,0 +1,164 @@
+{
+  "schema_version": 1,
+  "review_status": "proposed_not_approved",
+  "researched_at": "2026-10-29",
+  "live_tested": false,
+  "description": "Documentary candidates only: none are implemented or supported by KTradeLink yet.",
+  "capability_states": [
+    "unverified",
+    "documented_candidate",
+    "conditional",
+    "unsupported",
+    "supported"
+  ],
+  "brokers": [
+    {
+      "id": "kis",
+      "publisher": "Korea Investment & Securities",
+      "adapter_implemented": false,
+      "evidence_file": "docs/brokers/kis-market-data.md",
+      "capabilities": [
+        {
+          "method": "load_markets",
+          "state": "unverified",
+          "native_api_id": null,
+          "native_path": null,
+          "evidence_url": "https://github.com/koreainvestment/open-trading-api/blob/main/examples_llm/domestic_stock/inquire_price/inquire_price.py",
+          "requested_venues": [
+            "KRX"
+          ],
+          "requested_timeframes": [],
+          "notes": "Official quote example points to stocks_info; no master-file loading contract selected.",
+          "implemented": false,
+          "normalized_contract_verified": false,
+          "paper_environment": "unverified",
+          "real_environment": "unverified"
+        },
+        {
+          "method": "fetch_ticker",
+          "state": "documented_candidate",
+          "native_api_id": "FHKST01010100",
+          "native_path": "/uapi/domestic-stock/v1/quotations/inquire-price",
+          "evidence_url": "https://github.com/koreainvestment/open-trading-api/blob/main/examples_llm/domestic_stock/inquire_price/inquire_price.py",
+          "requested_venues": [
+            "KRX"
+          ],
+          "requested_timeframes": [],
+          "notes": "Official sample uses FID_COND_MRKT_DIV_CODE J/NX/UN. KTradeLink support none yet.",
+          "implemented": false,
+          "normalized_contract_verified": false,
+          "paper_environment": "unverified",
+          "real_environment": "unverified"
+        },
+        {
+          "method": "fetch_ohlcv",
+          "state": "documented_candidate",
+          "native_api_id": "FHKST03010100",
+          "native_path": "/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice",
+          "evidence_url": "https://github.com/koreainvestment/open-trading-api/blob/main/examples_llm/domestic_stock/inquire_daily_itemchartprice/inquire_daily_itemchartprice.py",
+          "requested_venues": [
+            "KRX"
+          ],
+          "requested_timeframes": [
+            "1d"
+          ],
+          "notes": "Publisher example D/W/M/Y; first-version request 1d only, verified paging and adjustment pending.",
+          "implemented": false,
+          "normalized_contract_verified": false,
+          "paper_environment": "unverified",
+          "real_environment": "unverified"
+        },
+        {
+          "method": "fetch_order_book",
+          "state": "documented_candidate",
+          "native_api_id": null,
+          "native_path": "/uapi/domestic-stock/v1/quotations/inquire-asking-price-exp-ccn",
+          "evidence_url": "https://github.com/koreainvestment/open-trading-api/blob/main/MCP/Kis%20Trading%20MCP/configs/domestic_stock.json",
+          "requested_venues": [
+            "KRX"
+          ],
+          "requested_timeframes": [],
+          "notes": "Publisher endpoint registry; per-field output and freshness unverified.",
+          "implemented": false,
+          "normalized_contract_verified": false,
+          "paper_environment": "unverified",
+          "real_environment": "unverified"
+        }
+      ]
+    },
+    {
+      "id": "kiwoom",
+      "publisher": "Kiwoom Securities",
+      "adapter_implemented": false,
+      "evidence_file": "docs/brokers/kiwoom-market-data.md",
+      "capabilities": [
+        {
+          "method": "load_markets",
+          "state": "unverified",
+          "native_api_id": null,
+          "native_path": null,
+          "evidence_url": "https://openapi.kiwoom.com/guide/apiguide",
+          "requested_venues": [
+            "KRX"
+          ],
+          "requested_timeframes": [],
+          "notes": "No selected market master contract or permitted enumeration strategy.",
+          "implemented": false,
+          "normalized_contract_verified": false,
+          "paper_environment": "unverified",
+          "real_environment": "unverified"
+        },
+        {
+          "method": "fetch_ticker",
+          "state": "documented_candidate",
+          "native_api_id": "ka10001",
+          "native_path": "/api/dostk/stkinfo",
+          "evidence_url": "https://github.com/Kiwoom-Securities/Kiwoom-REST-API/blob/main/examples/%EA%B5%AD%EB%82%B4%EC%A3%BC%EC%8B%9D/%EC%A2%85%EB%AA%A9%EC%A0%95%EB%B3%B4/get_domestic_stock_info.py",
+          "requested_venues": [
+            "KRX"
+          ],
+          "requested_timeframes": [],
+          "notes": "REST API; cur_prc and high/low/open fields in publisher example. Time field optional.",
+          "implemented": false,
+          "normalized_contract_verified": false,
+          "paper_environment": "unverified",
+          "real_environment": "unverified"
+        },
+        {
+          "method": "fetch_ohlcv",
+          "state": "documented_candidate",
+          "native_api_id": "ka10081",
+          "native_path": null,
+          "evidence_url": "https://openapi.kiwoom.com/guide/apiguide",
+          "requested_venues": [
+            "KRX"
+          ],
+          "requested_timeframes": [
+            "1d"
+          ],
+          "notes": "ka10081 daily chart listed by publisher; endpoint path and per-ID output still need direct verification.",
+          "implemented": false,
+          "normalized_contract_verified": false,
+          "paper_environment": "unverified",
+          "real_environment": "unverified"
+        },
+        {
+          "method": "fetch_order_book",
+          "state": "documented_candidate",
+          "native_api_id": "ka10004",
+          "native_path": "/api/dostk/mrkcond",
+          "evidence_url": "https://github.com/Kiwoom-Securities/Kiwoom-REST-API/blob/main/examples/%EA%B5%AD%EB%82%B4%EC%A3%BC%EC%8B%9D/%EC%8B%9C%EC%84%B8/get_domestic_stock_quote.py",
+          "requested_venues": [
+            "KRX"
+          ],
+          "requested_timeframes": [],
+          "notes": "Publisher example offers depth fields. Timestamp, levels, and conditional markets still unverified.",
+          "implemented": false,
+          "normalized_contract_verified": false,
+          "paper_environment": "unverified",
+          "real_environment": "unverified"
+        }
+      ]
+    }
+  ]
+}
