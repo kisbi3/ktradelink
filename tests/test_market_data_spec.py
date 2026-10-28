@@ -3,8 +3,8 @@
 Only synthetic data and documentary capability candidates are validated here.
 """
 
+import datetime
 import json
-from datetime import UTC, datetime, time
 from decimal import Decimal
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -59,15 +59,15 @@ def test_synthetic_daily_timestamp_is_anchored_to_kst_session_date() -> None:
     assert candle["venue"] == "KRX"
     assert candle["session_date"] == "2026-10-28"
 
-    kst_anchor = datetime.combine(
-        datetime.fromisoformat(candle["session_date"]).date(),
-        time.min,
+    kst_anchor = datetime.datetime.combine(
+        datetime.datetime.fromisoformat(candle["session_date"]).date(),
+        datetime.time.min,
         tzinfo=ZoneInfo("Asia/Seoul"),
     )
     assert candle["timestamp"] == int(kst_anchor.timestamp() * 1000)
     # KST midnight is 15:00 UTC on the *previous* calendar day.
-    assert datetime.fromtimestamp(
-        candle["timestamp"] / 1000, tz=UTC
+    assert datetime.datetime.fromtimestamp(
+        candle["timestamp"] / 1000, tz=datetime.UTC
     ).date().isoformat() == "2026-10-27"
 
     for key in ("open", "high", "low", "close"):
