@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -9,6 +9,7 @@ description = "A unified Python interface for Korean securities brokers"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
+license-files = ["LICENSE"]
 keywords = ["trading", "broker", "korea", "api", "finance"]
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
