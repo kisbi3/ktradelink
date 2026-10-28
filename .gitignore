@@ -19,6 +19,9 @@ venv/
 *.key
 *.p12
 *.pfx
+*.token
+*token*.json
+NPKI/
 secrets/
 credentials/
 
