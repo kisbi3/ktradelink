@@ -1,4 +1,4 @@
-KTRADELINK PR #4 — COMPLETE SOURCE TEXT FOR GEMINI (PARTIAL DURING ASSEMBLY)
+KTRADELINK PR #4 — COMPLETE ORIGINAL SOURCE TEXT FOR GEMINI
 Repository: https://github.com/kisbi3/ktradelink
 PR: https://github.com/kisbi3/ktradelink/pull/4
 Source commit: 02fa1f044d75ce4825d4dee5ba1857c1e40e36db
@@ -6,7 +6,10 @@ Base commit: d63ec2be627e99a43a6a2ca327118d4340bf3ca9
 Status: DRAFT. No broker adapter implemented.
 Content policy: All source file contents copied unchanged; separators are external.
 Review: do not infer supported trading behavior from design documentation.
-NOTE: This file will be COMPLETE after the second source batch is appended.
+File coverage: ALL 24 tracked source files, including ALL 11 changed PR #4 files.
+Line references: 1-based within each BEGIN/END ORIGINAL FILE section.
+The sources below are verbatim at the pinned source SHA; this review document
+is on a separate branch and DOES NOT change the PR #4 source HEAD.
 
 
 ======================================================================
@@ -638,4 +641,780 @@ SOURCE LINES: 26
 Reason:
 ======================================================================
 END ORIGINAL FILE: docs/reviews/review-template.md
+======================================================================
+
+======================================================================
+BEGIN ORIGINAL FILE: docs/specifications/README.md
+BLOB SHA: 7750a3bb39cd90af5e20ca4a0feb83c953cd21c7
+PR CHANGED: true
+SOURCE LINES: 13
+======================================================================
+# Unified API specifications
+
+Specifications are reviewed **before** broker implementations depend on them.
+
+- [`market-data-v0.1-draft.md`](market-data-v0.1-draft.md):
+  Python-native, CCXT-inspired domestic-equity market-data proposal with
+  explicit venue, time, precision, errors and verification gates.
+- [Broker documentation evidence](../brokers/README.md): documented endpoint
+  candidates and unresolved broker-specific fields.
+
+**Status:** Proposed for Gemini Web independent review and human decision.
+KIS and Kiwoom are **not implemented**; do not treat these documents as public
+package API or runtime capabilities. Track validation in [Issue #2](https://github.com/kisbi3/ktradelink/issues/2).
+======================================================================
+END ORIGINAL FILE: docs/specifications/README.md
+======================================================================
+
+======================================================================
+BEGIN ORIGINAL FILE: docs/specifications/capability-matrix-v0.1.json
+BLOB SHA: c42e585acc4f3ebf254f5df0b9e1db8a70800d2b
+PR CHANGED: true
+SOURCE LINES: 164
+======================================================================
+{
+  "schema_version": 1,
+  "review_status": "proposed_not_approved",
+  "researched_at": "2026-10-29",
+  "live_tested": false,
+  "description": "Documentary candidates only: none are implemented or supported by KTradeLink yet.",
+  "capability_states": [
+    "unverified",
+    "documented_candidate",
+    "conditional",
+    "unsupported",
+    "supported"
+  ],
+  "brokers": [
+    {
+      "id": "kis",
+      "publisher": "Korea Investment & Securities",
+      "adapter_implemented": false,
+      "evidence_file": "docs/brokers/kis-market-data.md",
+      "capabilities": [
+        {
+          "method": "load_markets",
+          "state": "unverified",
+          "native_api_id": null,
+          "native_path": null,
+          "evidence_url": "https://github.com/koreainvestment/open-trading-api/blob/main/examples_llm/domestic_stock/inquire_price/inquire_price.py",
+          "requested_venues": [
+            "KRX"
+          ],
+          "requested_timeframes": [],
+          "notes": "Official quote example points to stocks_info; no master-file loading contract selected.",
+          "implemented": false,
+          "normalized_contract_verified": false,
+          "paper_environment": "unverified",
+          "real_environment": "unverified"
+        },
+        {
+          "method": "fetch_ticker",
+          "state": "documented_candidate",
+          "native_api_id": "FHKST01010100",
+          "native_path": "/uapi/domestic-stock/v1/quotations/inquire-price",
+          "evidence_url": "https://github.com/koreainvestment/open-trading-api/blob/main/examples_llm/domestic_stock/inquire_price/inquire_price.py",
+          "requested_venues": [
+            "KRX"
+          ],
+          "requested_timeframes": [],
+          "notes": "Official sample uses FID_COND_MRKT_DIV_CODE J/NX/UN. KTradeLink support none yet.",
+          "implemented": false,
+          "normalized_contract_verified": false,
+          "paper_environment": "unverified",
+          "real_environment": "unverified"
+        },
+        {
+          "method": "fetch_ohlcv",
+          "state": "documented_candidate",
+          "native_api_id": "FHKST03010100",
+          "native_path": "/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice",
+          "evidence_url": "https://github.com/koreainvestment/open-trading-api/blob/main/examples_llm/domestic_stock/inquire_daily_itemchartprice/inquire_daily_itemchartprice.py",
+          "requested_venues": [
+            "KRX"
+          ],
+          "requested_timeframes": [
+            "1d"
+          ],
+          "notes": "Publisher example D/W/M/Y; first-version request 1d only, verified paging and adjustment pending.",
+          "implemented": false,
+          "normalized_contract_verified": false,
+          "paper_environment": "unverified",
+          "real_environment": "unverified"
+        },
+        {
+          "method": "fetch_order_book",
+          "state": "documented_candidate",
+          "native_api_id": null,
+          "native_path": "/uapi/domestic-stock/v1/quotations/inquire-asking-price-exp-ccn",
+          "evidence_url": "https://github.com/koreainvestment/open-trading-api/blob/main/MCP/Kis%20Trading%20MCP/configs/domestic_stock.json",
+          "requested_venues": [
+            "KRX"
+          ],
+          "requested_timeframes": [],
+          "notes": "Publisher endpoint registry; per-field output and freshness unverified.",
+          "implemented": false,
+          "normalized_contract_verified": false,
+          "paper_environment": "unverified",
+          "real_environment": "unverified"
+        }
+      ]
+    },
+    {
+      "id": "kiwoom",
+      "publisher": "Kiwoom Securities",
+      "adapter_implemented": false,
+      "evidence_file": "docs/brokers/kiwoom-market-data.md",
+      "capabilities": [
+        {
+          "method": "load_markets",
+          "state": "unverified",
+          "native_api_id": null,
+          "native_path": null,
+          "evidence_url": "https://openapi.kiwoom.com/guide/apiguide",
+          "requested_venues": [
+            "KRX"
+          ],
+          "requested_timeframes": [],
+          "notes": "No selected market master contract or permitted enumeration strategy.",
+          "implemented": false,
+          "normalized_contract_verified": false,
+          "paper_environment": "unverified",
+          "real_environment": "unverified"
+        },
+        {
+          "method": "fetch_ticker",
+          "state": "documented_candidate",
+          "native_api_id": "ka10001",
+          "native_path": "/api/dostk/stkinfo",
+          "evidence_url": "https://github.com/Kiwoom-Securities/Kiwoom-REST-API/blob/main/examples/%EA%B5%AD%EB%82%B4%EC%A3%BC%EC%8B%9D/%EC%A2%85%EB%AA%A9%EC%A0%95%EB%B3%B4/get_domestic_stock_info.py",
+          "requested_venues": [
+            "KRX"
+          ],
+          "requested_timeframes": [],
+          "notes": "REST API; cur_prc and high/low/open fields in publisher example. Time field optional.",
+          "implemented": false,
+          "normalized_contract_verified": false,
+          "paper_environment": "unverified",
+          "real_environment": "unverified"
+        },
+        {
+          "method": "fetch_ohlcv",
+          "state": "documented_candidate",
+          "native_api_id": "ka10081",
+          "native_path": null,
+          "evidence_url": "https://openapi.kiwoom.com/guide/apiguide",
+          "requested_venues": [
+            "KRX"
+          ],
+          "requested_timeframes": [
+            "1d"
+          ],
+          "notes": "ka10081 daily chart listed by publisher; endpoint path and per-ID output still need direct verification.",
+          "implemented": false,
+          "normalized_contract_verified": false,
+          "paper_environment": "unverified",
+          "real_environment": "unverified"
+        },
+        {
+          "method": "fetch_order_book",
+          "state": "documented_candidate",
+          "native_api_id": "ka10004",
+          "native_path": "/api/dostk/mrkcond",
+          "evidence_url": "https://github.com/Kiwoom-Securities/Kiwoom-REST-API/blob/main/examples/%EA%B5%AD%EB%82%B4%EC%A3%BC%EC%8B%9D/%EC%8B%9C%EC%84%B8/get_domestic_stock_quote.py",
+          "requested_venues": [
+            "KRX"
+          ],
+          "requested_timeframes": [],
+          "notes": "Publisher example offers depth fields. Timestamp, levels, and conditional markets still unverified.",
+          "implemented": false,
+          "normalized_contract_verified": false,
+          "paper_environment": "unverified",
+          "real_environment": "unverified"
+        }
+      ]
+    }
+  ]
+}
+======================================================================
+END ORIGINAL FILE: docs/specifications/capability-matrix-v0.1.json
+======================================================================
+
+======================================================================
+BEGIN ORIGINAL FILE: docs/specifications/market-data-v0.1-draft.md
+BLOB SHA: ed25737b0935950e1157b04d7fd715c473372ca6
+PR CHANGED: true
+SOURCE LINES: 211
+======================================================================
+# Unified domestic-equity market-data API — v0.1 PROPOSAL
+
+- **Status:** Proposed for independent Gemini Web review and maintainer decision
+- **Last revised:** 2026-10-29
+- **Not implemented. No live broker or paper account has been queried.**
+- **First target:** KIS + Kiwoom **REST**; Korean listed common stocks, KRX
+  read-only market data. NXT/SOR/composite scopes are documented as future
+  conditional features, *not* an implicit KRX fallback.
+- Source evidence: [KIS](../brokers/kis-market-data.md) and
+  [Kiwoom REST](../brokers/kiwoom-market-data.md)
+
+This proposal makes falsifiable choices so reviewers can reject them before
+adapter development. A name matching a vendor endpoint is **not** a declaration
+that KTradeLink supports it.
+
+## 1. Design goals
+
+1. A broker swap must preserve the **meaning** of the returned price, candle,
+   quote book and session, or raise an explicit error.
+2. User-facing `symbol` is a string with leading zeros intact, never an int.
+3. Instrument identity, market-data source and order routing are distinct.
+   **Order routing is outside v0.1**.
+4. Model sources as potentially stale/partial; distinguish a missing value from
+   a genuine zero; never invent a native exchange timestamp.
+5. Brokerage capabilities are explicit and *per method, venue, environment,
+   timeframe and asset class*, not an unconditional `has=True`.
+6. Prefer read-only fixtures in CI; do not fetch live quotes or credentials.
+
+## 2. Candidate public interface (signatures for review)
+
+```python
+# Conceptual contract; these functions do not exist yet.
+broker.load_markets(*, reload=False)
+
+broker.fetch_ticker(symbol: str, *, venue: str = "KRX", params=None)
+broker.fetch_order_book(
+    symbol: str, limit: int | None = None, *,
+    venue: str = "KRX", params=None
+)
+broker.fetch_ohlcv(
+    symbol: str, timeframe: str = "1d",
+    since: int | None = None, limit: int | None = None, *,
+    venue: str = "KRX", adjustment: str = "raw",
+    session: str = "regular", params=None
+)
+```
+
+`params` is reserved for **documented broker-native optional parameters**;
+common choices such as `venue`, `adjustment`, and `session` must be explicit
+rather than hidden. Unknown or conflicting options must raise an error.
+
+The API names deliberately resemble CCXT, but the proposed data contract is
+**Python-native**, not guaranteed byte-for-byte compatible with CCXT's list
+return types. An eventual `to_ccxt_ohlcv()` or compatibility layer may be
+offered separately after the normalized contract is stable. Do not implement
+two conflicting representations now.
+
+## 3. Symbol, venue and quote-source semantics
+
+- **First-version stock symbol:** exactly six ASCII digits, e.g. `"005930"`.
+  Do not strip leading zeros, accept integer symbols, or auto-guess ETFs/ETNs,
+  indices, bonds or derivatives. Expand the instrument registry later.
+- **Proposed `venue` values:** `KRX`, `NXT`, `BROKER_COMPOSITE`.
+  `KRX` is the explicit **default** for v0.1 domestic-stock retrieval.
+  Passing `NXT` or `BROKER_COMPOSITE` is an unsupported-capability error
+  until that specific endpoint, account environment and behavior are verified.
+- **Instrument vs market-data scope:** `venue="BROKER_COMPOSITE"` means a
+  broker-defined multi-market quote, not a physical exchange and **never an
+  order execution destination**. The result must record source semantics and
+  source broker. Do not assume KIS `UN` and Kiwoom `_AL` SOR are identical.
+- KIS example: `FID_INPUT_ISCD=005930` and
+  `FID_COND_MRKT_DIV_CODE=J|NX|UN`.
+- Kiwoom example: `stk_cd=005930|005930_NX|005930_AL` (the latter two
+  are market-qualified *native* IDs). Query mapping must be endpoint-specific.
+- **No fallback:** if the selected venue is unavailable, do not silently
+  fetch KRX or an aggregated quote instead. Raise `UnsupportedCapability`
+  or an explicit broker/data-access error.
+- Each normalized object must contain both `symbol` and `venue` as well as
+  `broker`; composite quotes also require a `scope_description` naming the
+  native market source.
+
+## 4. Proposed normalized data contract
+
+For first-version pure-Python usage, model objects can be typed records
+(`TypedDict`, dataclasses or equivalents **not chosen yet**). All payloads
+below are proposals, not current `ktradelink` objects.
+
+| Result | Required keys | Optional/nullable keys |
+| --- | --- | --- |
+| Ticker | `symbol`, `venue`, `broker`, `last`, `info` | `timestamp`, `retrieved_at`, `open`, `high`, `low`, `close`, `volume`, `bid`, `ask`, `scope_description` |
+| Candle | `symbol`, `venue`, `broker`, `timeframe`, `timestamp`, `session_date`, `open`, `high`, `low`, `close`, `volume`, `adjustment`, `session` | `complete`, `source_timestamp` |
+| OrderBook | `symbol`, `venue`, `broker`, `bids`, `asks`, `info` | `timestamp`, `retrieved_at`, `scope_description` |
+
+- **Missing prices:** `last` is present as a key but can be `None`;
+  `open/high/low/close/bid/ask` are `Decimal | None`. Distinct
+  `None` vs `Decimal(0)` must be preserved based on field-level evidence.
+  `volume` is an integer number of shares if supplied; otherwise `None`.
+- **Precision (proposed):** parse currency prices as `Decimal`, not
+  binary floats. For first-version domestic common stocks, currency is KRW
+  and quantity unit is shares; do not infer the units of monetary **turnover**.
+  JSON serialization of Decimal would require decimal *strings* and versioned
+  schemas. Tick-size/order rules are separate concerns.
+- **Source sign:** a leading `+`/`-` in a Kiwoom string may be directional
+  metadata for a price *or* an actual signed delta, depending on field.
+  Evidence for an `abs` transform is required per field. A missing field
+  or non-numeric garbage should not be changed to zero silently.
+- **Raw data:** `info` defaults to an empty, allowlisted sanitized mapping.
+  Never include tokens, account identifiers, authentication headers, keys or
+  unconstrained upstream payloads in public models or logs.
+
+## 5. Time and market session semantics
+
+- All values named `timestamp` or `retrieved_at` are **UTC Unix epoch
+  milliseconds**, typed `int | None`. A quote/order-book timestamp is
+  `None` unless the publisher supplies a trustworthy event time.
+  `retrieved_at` is a *client receive time*, never an exchange time.
+- Day candles represent a **KST exchange session date**; the required
+  `session_date` is an ISO date (`YYYY-MM-DD`). Proposed `timestamp`
+  convention for `1d`: **00:00:00 Asia/Seoul of `session_date`**, converted
+  to UTC Unix ms as a *session anchor*, not as a real trade time.
+  Example: `2026-10-28` session anchors at
+  `2026-10-27T15:00:00Z`, which is correct for KST midnight. Consumers must
+  NOT compare its UTC date to `session_date` and call it a mismatch.
+- Minute candles require an explicit source date + time in KST and a
+  `timestamp` for the **start of the interval**; reject unknown end-vs-start
+  conventions until verified. If the source gives only `HHMMSS`, require a
+  verified trading date, not local-wall-clock inference.
+- For weekly/monthly bars, the interval anchor/session label remains **TBD**;
+  no `1w`/`1M` support may be advertised until defined.
+- Keep `session="regular"` as v0.1 requested scope, not an assumption that
+  all broker API responses exclude pre/post market and NXT trading. If the
+  adapter cannot establish regular-session coverage, error instead of
+  mislabeling mixed-session bars.
+- Session timestamps, DST, holidays, and exchange schedule require
+  explicit tests. Korea uses `Asia/Seoul` for current market data.
+
+## 6. Candle and book ordering, pagination and adjustments
+
+- `fetch_ohlcv()` returns candles **oldest to newest** by timestamp, without
+  duplicate timestamps in a single `venue/timeframe/adjustment/session`
+  series. Whether the source sorts newest-first is implementation detail.
+- If `since` is provided, interpret it as UTC Unix ms **inclusive** and
+  return up to `limit` earliest items at or after `since`. Without `since`,
+  `limit` refers to the most recent `limit` available candles, still returned
+  oldest-first. All limits must be validated as positive integers.
+- No hidden truncation: if the requested range needs pagination the adapter
+  must implement a proven continuation path or explicitly reject that request.
+  Fewer items are acceptable only when a genuine end-of-history boundary
+  is established, not merely because a provider response was capped.
+- `fetch_order_book`: `bids` descending by price, `asks` ascending;
+  levels are `[Decimal(price), int(shares)]`. An actual zero-size quoted
+  level may be preserved when its price was provided; **missing** price and
+  level information must not be synthesized. `limit` counts levels on
+  *each side*; exceeding verified source depth must error rather than
+  silently clamp.
+- **Adjustment:** `raw` vs `adjusted` is a semantic input, not a generic
+  `FID_ORG_ADJ_PRC` value. The KIS adjustment parameter meaning can vary
+  across endpoints; Kiwoom's `upd_stkpc_tp` needs independent per-ID mapping.
+  The proposed default `raw` must **not** be published until backed by
+  authoritative response fixtures; otherwise fail with unsupported option.
+- Incomplete current session bar and suspended trading must be distinguished
+  from missing data. Define their exact status after test fixtures are available.
+
+## 7. Capabilities and exceptions (names proposed)
+
+**Capability states**: `documented_candidate`, `unverified`,
+`supported`, `conditional`, `unsupported`. **Only `supported`**
+means both implemented and passing broker-specific normalized contract tests.
+No capabilities are `supported` today. Future discovery must allow
+method, symbol asset class, environment, venue, timeframe and permission
+restrictions (with documented evidence references).
+
+**Proposed error taxonomy**:
+
+- `InvalidSymbol`, `InvalidVenue`, `InvalidTimeframe`,
+  `InvalidParameter`
+- `UnsupportedCapability` (feature/option not implemented or proven)
+- `AuthenticationError`, `PermissionDenied`
+- `RateLimitExceeded`, `BrokerUnavailable`, `TransportError`
+- `ResponseSchemaError`, `IncompleteMarketData`
+
+An HTTP success with missing required fields is **not** a valid ticker/candle.
+No broad `except: return []` or ungrounded automatic retries. Raw broker
+error IDs map to common errors only when verified.
+
+## 8. Unresolved design gates (must be reviewed before adapters)
+
+- [ ] Confirm `Candle` typed-record representation vs strict CCXT six-value
+      OHLCV arrays and possible dual convenience API.
+- [ ] Check native KIS and Kiwoom field names, nullable semantics, signed-price
+      rules and response timestamps against vendor specifications and legal
+      sanitized account fixtures.
+- [ ] Verify KIS daily adjustment behavior *per endpoint* and Kiwoom `ka10081`
+      chart's adjustment, timestamps and continuation; add raw and adjusted
+      examples, no guessing.
+- [ ] Verify both providers' quote scope/mode, paper vs real entitlements and
+      NXT/SOR rules; explicit KRX-only initial support is the safe option.
+- [ ] Define `load_markets` master sources, cache invalidation, session/venue
+      listing, and data rights before enabling it.
+- [ ] Create contract fixtures for genuine vendor responses with sensitive
+      information removed. Synthetic examples are only **design examples**.
+- [ ] Confirm per-venue interval availability, `since`/paging completeness,
+      empty order-book levels, out-of-session data and date boundaries.
+- [ ] Record Gemini Web review pinned to a commit SHA, resolve findings, and
+      obtain human approval. Until then this document is PROPOSED.
+
+## 9. Non-goals
+
+No functional KIS/Kiwoom adapter, no real data, no WebSocket streaming, no
+orders/accounts, no broker credential processing, no backtesting, no MCP, no
+hosted SaaS, and no market-data redistribution.
+======================================================================
+END ORIGINAL FILE: docs/specifications/market-data-v0.1-draft.md
+======================================================================
+
+======================================================================
+BEGIN ORIGINAL FILE: pyproject.toml
+BLOB SHA: 6fb8402a2964f7777d4cae0c8f4df45b4192cd1a
+PR CHANGED: false
+SOURCE LINES: 47
+======================================================================
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ktradelink"
+version = "0.0.0.dev0"
+description = "A unified Python interface for Korean securities brokers"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+keywords = ["trading", "broker", "korea", "api", "finance"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Office/Business :: Financial :: Investment",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.8"]
+
+[project.urls]
+Homepage = "https://github.com/kisbi3/ktradelink"
+Repository = "https://github.com/kisbi3/ktradelink"
+Issues = "https://github.com/kisbi3/ktradelink/issues"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "B", "UP"]
+======================================================================
+END ORIGINAL FILE: pyproject.toml
+======================================================================
+
+======================================================================
+BEGIN ORIGINAL FILE: src/ktradelink/__init__.py
+BLOB SHA: 2678927e10d81f23822771ac7bfad503e1cd8abe
+PR CHANGED: false
+SOURCE LINES: 9
+======================================================================
+"""KTradeLink: a future unified Python interface for Korean securities brokers.
+
+The public broker API is under design. No brokerage adapters or live trading
+operations are available in this bootstrap release.
+"""
+
+__version__ = "0.0.0.dev0"
+
+__all__ = ["__version__"]
+======================================================================
+END ORIGINAL FILE: src/ktradelink/__init__.py
+======================================================================
+
+======================================================================
+BEGIN ORIGINAL FILE: src/ktradelink/py.typed
+BLOB SHA: e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+PR CHANGED: false
+SOURCE LINES: 0
+======================================================================
+
+======================================================================
+END ORIGINAL FILE: src/ktradelink/py.typed
+======================================================================
+
+======================================================================
+BEGIN ORIGINAL FILE: tests/fixtures/spec/README.md
+BLOB SHA: e4d32d4eeac385ae21aff30ae9c017cff9909469
+PR CHANGED: true
+SOURCE LINES: 13
+======================================================================
+# Synthetic market-data design fixtures
+
+These files are **invented values** for checking documented contract
+invariants before any adapter exists. They are **not** captured or verified KIS
+or Kiwoom responses. Do not reuse them as vendor field-mapping fixtures.
+
+Prices are decimal strings so the tests can parse them with `Decimal`.
+The daily date fixture shows KST session anchoring to previous UTC calendar
+date; the order book tests show bid/ask order and zero quantity preservation.
+
+Real provider-response contract tests must use authorized redacted samples,
+reference the official field-level specification, and remain separate from
+these conceptual examples.
+======================================================================
+END ORIGINAL FILE: tests/fixtures/spec/README.md
+======================================================================
+
+======================================================================
+BEGIN ORIGINAL FILE: tests/fixtures/spec/candle-day-synthetic.json
+BLOB SHA: 710dbf7955b018e0ebafa0d0d40f2cf901f1308b
+PR CHANGED: true
+SOURCE LINES: 19
+======================================================================
+{
+  "_synthetic": true,
+  "_note": "DESIGN FIXTURE ONLY, NOT KIS OR KIWOOM MARKET DATA",
+  "symbol": "005930",
+  "venue": "KRX",
+  "broker": "synthetic",
+  "timeframe": "1d",
+  "timestamp": 1793113200000,
+  "session_date": "2026-10-28",
+  "open": "70000",
+  "high": "71000",
+  "low": "69000",
+  "close": "70500",
+  "volume": 12345,
+  "adjustment": "raw",
+  "session": "regular",
+  "complete": true,
+  "source_timestamp": null
+}
+======================================================================
+END ORIGINAL FILE: tests/fixtures/spec/candle-day-synthetic.json
+======================================================================
+
+======================================================================
+BEGIN ORIGINAL FILE: tests/fixtures/spec/order-book-synthetic.json
+BLOB SHA: 393c36e8713c38faa55dc234970faf426765a9a6
+PR CHANGED: true
+SOURCE LINES: 30
+======================================================================
+{
+  "_synthetic": true,
+  "_note": "DESIGN FIXTURE ONLY, NOT KIS OR KIWOOM MARKET DATA",
+  "symbol": "005930",
+  "venue": "KRX",
+  "broker": "synthetic",
+  "timestamp": null,
+  "retrieved_at": 1793113200000,
+  "bids": [
+    [
+      "70000",
+      12
+    ],
+    [
+      "69900",
+      0
+    ]
+  ],
+  "asks": [
+    [
+      "70100",
+      9
+    ],
+    [
+      "70200",
+      20
+    ]
+  ],
+  "info": {}
+}
+======================================================================
+END ORIGINAL FILE: tests/fixtures/spec/order-book-synthetic.json
+======================================================================
+
+======================================================================
+BEGIN ORIGINAL FILE: tests/test_gitignore.py
+BLOB SHA: 9e9f124af4c619e0bc09523ad13aed7e1709009a
+PR CHANGED: false
+SOURCE LINES: 33
+======================================================================
+"""Prevent accidentally tracking common local brokerage secrets.
+
+.gitignore is a convenience safeguard, not a replacement for secret scanning.
+"""
+
+import shutil
+import subprocess
+from pathlib import Path
+
+import pytest
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "broker_access.token",
+        "access_token.json",
+        "broker_refresh_token_cache.json",
+        "NPKI/user/SignCert.der",
+    ],
+)
+def test_gitignore_excludes_local_broker_credentials(path: str) -> None:
+    if shutil.which("git") is None:
+        pytest.skip("git executable is required for ignore pattern contract tests")
+
+    root = Path(__file__).resolve().parents[1]
+    result = subprocess.run(
+        ["git", "check-ignore", "-q", "--no-index", path],
+        cwd=root,
+        check=False,
+        capture_output=True,
+    )
+    assert result.returncode == 0, f"{path} is not excluded by .gitignore"
+======================================================================
+END ORIGINAL FILE: tests/test_gitignore.py
+======================================================================
+
+======================================================================
+BEGIN ORIGINAL FILE: tests/test_market_data_spec.py
+BLOB SHA: 0dfe898757e9ba7e9e5ebaed3e613537bc3a4c53
+PR CHANGED: true
+SOURCE LINES: 94
+======================================================================
+"""Static design-contract checks; NOT tests of any broker adapter.
+
+Only synthetic data and documentary capability candidates are validated here.
+"""
+
+import datetime
+import json
+from decimal import Decimal
+from pathlib import Path
+from zoneinfo import ZoneInfo
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+SPEC = ROOT / "docs" / "specifications"
+FIXTURES = ROOT / "tests" / "fixtures" / "spec"
+
+
+def read_json(path: Path) -> dict:
+    with path.open(encoding="utf-8") as file:
+        return json.load(file)
+
+
+def test_matrix_never_reports_unimplemented_api_as_supported() -> None:
+    matrix = read_json(SPEC / "capability-matrix-v0.1.json")
+
+    assert matrix["review_status"] == "proposed_not_approved"
+    assert matrix["live_tested"] is False
+    assert matrix["schema_version"] == 1
+    assert {broker["id"] for broker in matrix["brokers"]} == {"kis", "kiwoom"}
+    allowed_states = set(matrix["capability_states"])
+    required_methods = {
+        "load_markets",
+        "fetch_ticker",
+        "fetch_ohlcv",
+        "fetch_order_book",
+    }
+    for broker in matrix["brokers"]:
+        assert broker["adapter_implemented"] is False
+        assert (ROOT / broker["evidence_file"]).is_file()
+        capabilities = broker["capabilities"]
+        assert {cap["method"] for cap in capabilities} == required_methods
+        for cap in capabilities:
+            assert cap["state"] in allowed_states
+            assert cap["state"] != "supported"
+            assert cap["implemented"] is False
+            assert cap["normalized_contract_verified"] is False
+            assert cap["real_environment"] == "unverified"
+            assert cap["paper_environment"] == "unverified"
+            assert cap["evidence_url"].startswith("https://")
+            assert cap["requested_venues"] == ["KRX"]
+            assert isinstance(cap["requested_timeframes"], list)
+
+
+def test_synthetic_daily_timestamp_is_anchored_to_kst_session_date() -> None:
+    candle = read_json(FIXTURES / "candle-day-synthetic.json")
+    assert candle["_synthetic"] is True
+    assert candle["venue"] == "KRX"
+    assert candle["session_date"] == "2026-10-28"
+
+    kst_anchor = datetime.datetime.combine(
+        datetime.datetime.fromisoformat(candle["session_date"]).date(),
+        datetime.time.min,
+        tzinfo=ZoneInfo("Asia/Seoul"),
+    )
+    assert candle["timestamp"] == int(kst_anchor.timestamp() * 1000)
+    # KST midnight is 15:00 UTC on the *previous* calendar day.
+    assert datetime.datetime.fromtimestamp(
+        candle["timestamp"] / 1000, tz=datetime.UTC
+    ).date().isoformat() == "2026-10-27"
+
+    for key in ("open", "high", "low", "close"):
+        assert Decimal(candle[key]) > 0
+    assert candle["volume"] >= 0
+
+
+@pytest.mark.parametrize(
+    ("side", "reverse"),
+    [("bids", True), ("asks", False)],
+)
+def test_synthetic_book_levels_follow_documented_price_order(
+    side: str, reverse: bool
+) -> None:
+    book = read_json(FIXTURES / "order-book-synthetic.json")
+    assert book["_synthetic"] is True
+    assert book["timestamp"] is None  # No invented native event timestamp.
+    prices = [Decimal(price) for price, quantity in book[side]]
+    quantities = [quantity for price, quantity in book[side]]
+
+    assert prices == sorted(prices, reverse=reverse)
+    assert all(isinstance(quantity, int) and quantity >= 0 for quantity in quantities)
+    # A genuinely documented zero-size level is distinct from missing data.
+    if side == "bids":
+        assert 0 in quantities
+======================================================================
+END ORIGINAL FILE: tests/test_market_data_spec.py
+======================================================================
+
+======================================================================
+BEGIN ORIGINAL FILE: tests/test_package.py
+BLOB SHA: f5bc940702786c53239d0521c24320b2b0ef1f8b
+PR CHANGED: false
+SOURCE LINES: 22
+======================================================================
+"""Smoke tests for the installable KTradeLink package."""
+
+import importlib
+from importlib.metadata import version
+
+
+def test_package_imports() -> None:
+    module = importlib.import_module("ktradelink")
+    assert module.__name__ == "ktradelink"
+
+
+def test_distribution_version_matches_package_version() -> None:
+    from ktradelink import __version__
+
+    assert version("ktradelink") == __version__
+
+
+def test_no_unimplemented_brokers_are_exposed() -> None:
+    import ktradelink
+
+    assert not hasattr(ktradelink, "kis")
+    assert not hasattr(ktradelink, "kiwoom")
+======================================================================
+END ORIGINAL FILE: tests/test_package.py
 ======================================================================
