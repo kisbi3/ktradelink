@@ -163,3 +163,39 @@ def test_benign_metadata_keys_are_not_blocked_by_short_cano_name() -> None:
     )
     assert ticker.info["canonical_symbol"] == "005930"
 
+
+@pytest.mark.parametrize(
+    "price_field",
+    ["last", "open", "high", "low", "previous_close", "bid", "ask"],
+)
+def test_signed_negative_zero_is_rejected_for_all_prices(price_field: str) -> None:
+    with pytest.raises(ValueError, match="unsigned finite Decimal"):
+        example_ticker(**{price_field: Decimal("-0")})
+
+
+@pytest.mark.parametrize(
+    "field_name,invalid",
+    [
+        ("symbol", "005 930"),
+        ("symbol", "005930\n000660"),
+        ("symbol", "005930\t"),
+        ("symbol", "\u200b005930"),
+        ("broker", "kiwoom\nreal"),
+        ("broker", "kis test"),
+        ("broker", "kis\x00"),
+    ],
+)
+def test_symbol_and_broker_reject_internal_whitespace_and_controls(
+    field_name: str, invalid: str
+) -> None:
+    with pytest.raises(ValueError, match="printable string"):
+        example_ticker(**{field_name: invalid})
+
+
+def test_scope_description_rejects_embedded_control_characters() -> None:
+    with pytest.raises(ValueError):
+        example_ticker(
+            venue="BROKER_COMPOSITE",
+            scope_description="multi-market\narbitrary",
+        )
+

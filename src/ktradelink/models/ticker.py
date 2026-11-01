@@ -49,8 +49,13 @@ class Ticker:
     def __post_init__(self) -> None:
         for name in ("symbol", "broker"):
             value = getattr(self, name)
-            if not isinstance(value, str) or not value or value != value.strip():
-                raise ValueError(f"{name} must be a nonempty, trimmed string")
+            if (
+                not isinstance(value, str)
+                or not value
+                or value != value.strip()
+                or any(char.isspace() or not char.isprintable() for char in value)
+            ):
+                raise ValueError(f"{name} must be a printable string without whitespace")
 
         if not isinstance(self.venue, str) or self.venue not in _VENUES:
             raise ValueError(f"venue must be one of {sorted(_VENUES)!r}")
@@ -63,17 +68,18 @@ class Ticker:
             not isinstance(self.scope_description, str)
             or self.scope_description != self.scope_description.strip()
             or not self.scope_description
+            or any(not char.isprintable() for char in self.scope_description)
         ):
-            raise ValueError("scope_description must be a nonempty, trimmed string")
+            raise ValueError("scope_description must be printable and trimmed")
 
         for name in _PRICES:
             value = getattr(self, name)
             if value is not None and (
                 not isinstance(value, Decimal)
                 or not value.is_finite()
-                or value < 0
+                or value.is_signed()
             ):
-                raise ValueError(f"{name} must be a nonnegative finite Decimal or None")
+                raise ValueError(f"{name} must be an unsigned finite Decimal or None")
         for name in (*_TIMESTAMPS, "volume"):
             value = getattr(self, name)
             if value is not None and (
