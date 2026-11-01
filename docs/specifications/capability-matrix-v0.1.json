@@ -71,14 +71,14 @@
         {
           "method": "fetch_order_book",
           "state": "documented_candidate",
-          "native_api_id": null,
+          "native_api_id": "FHKST01010200",
           "native_path": "/uapi/domestic-stock/v1/quotations/inquire-asking-price-exp-ccn",
-          "evidence_url": "https://github.com/koreainvestment/open-trading-api/blob/main/MCP/Kis%20Trading%20MCP/configs/domestic_stock.json",
+          "evidence_url": "https://github.com/koreainvestment/open-trading-api/blob/main/examples_llm/domestic_stock/inquire_asking_price_exp_ccn/inquire_asking_price_exp_ccn.py",
           "requested_venues": [
             "KRX"
           ],
           "requested_timeframes": [],
-          "notes": "Publisher endpoint registry; per-field output and freshness unverified.",
+          "notes": "TR ID and endpoint verified in publisher quote-depth example; output fields, freshness, entitlement and KTradeLink mapping unverified.",
           "implemented": false,
           "normalized_contract_verified": false,
           "paper_environment": "unverified",
@@ -128,15 +128,15 @@
           "method": "fetch_ohlcv",
           "state": "documented_candidate",
           "native_api_id": "ka10081",
-          "native_path": null,
-          "evidence_url": "https://openapi.kiwoom.com/guide/apiguide",
+          "native_path": "/api/dostk/chart",
+          "evidence_url": "https://github.com/Kiwoom-Securities/Kiwoom-REST-API/blob/main/examples/%EA%B5%AD%EB%82%B4%EC%A3%BC%EC%8B%9D/%EC%B0%A8%ED%8A%B8/get_domestic_stock_daily_chart.py",
           "requested_venues": [
             "KRX"
           ],
           "requested_timeframes": [
             "1d"
           ],
-          "notes": "ka10081 daily chart listed by publisher; endpoint path and per-ID output still need direct verification.",
+          "notes": "Official ka10081 example confirms chart path, stk_dt_pole_chart_qry, base_dt and continuation; normalized response semantics still unverified.",
           "implemented": false,
           "normalized_contract_verified": false,
           "paper_environment": "unverified",

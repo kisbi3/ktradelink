@@ -9,6 +9,7 @@
 
 - [KIS official examples repository](https://github.com/koreainvestment/open-trading-api)
 - [Current quote example — `inquire_price`](https://github.com/koreainvestment/open-trading-api/blob/main/examples_llm/domestic_stock/inquire_price/inquire_price.py)
+- [Order book / expected execution — `inquire_asking_price_exp_ccn`](https://github.com/koreainvestment/open-trading-api/blob/main/examples_llm/domestic_stock/inquire_asking_price_exp_ccn/inquire_asking_price_exp_ccn.py)
 - [Daily/weekly/monthly/yearly bars — `inquire_daily_itemchartprice`](https://github.com/koreainvestment/open-trading-api/blob/main/examples_llm/domestic_stock/inquire_daily_itemchartprice/inquire_daily_itemchartprice.py)
 - [Official publisher endpoint registry](https://github.com/koreainvestment/open-trading-api/blob/main/MCP/Kis%20Trading%20MCP/configs/domestic_stock.json)
 - [Publisher's use-case examples](https://github.com/koreainvestment/open-trading-api/blob/main/examples_user/domestic_stock/domestic_stock_examples.py)
@@ -22,7 +23,7 @@ parsers or releasing a support claim.
 | Unified candidate | Publisher function | Endpoint path | Auth/TR ID where found | Evidence |
 | --- | --- | --- | --- | --- |
 | `fetch_ticker` | `inquire_price` | `/uapi/domestic-stock/v1/quotations/inquire-price` | `FHKST01010100` | current quote example |
-| `fetch_order_book` | `inquire_asking_price_exp_ccn` | `/uapi/domestic-stock/v1/quotations/inquire-asking-price-exp-ccn` | verify exact TR ID against current example before implementation | publisher registry |
+| `fetch_order_book` | `inquire_asking_price_exp_ccn` | `/uapi/domestic-stock/v1/quotations/inquire-asking-price-exp-ccn` | `FHKST01010200` | official book example (real/demo) |
 | `fetch_ohlcv` (D/W/M/Y) | `inquire_daily_itemchartprice` | `/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice` | `FHKST03010100` | period-bar example |
 | `fetch_ohlcv` (intraday candidate) | `inquire_time_itemchartprice` / `inquire_time_dailychartprice` | `/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice` / `inquire-time-dailychartprice` | not yet mapped | publisher registry |
 | `load_markets` | publisher's `stocks_info` reference | no confirmed REST contract | n/a | current quote example points to master files |
@@ -57,7 +58,7 @@ For `inquire_daily_itemchartprice`, examples show:
 
 1. Which exact quote fields are present, optional, delayed, numeric-string, or
    dependent on the exchange selection? Confirm native output schemas.
-2. `output1` order book level mappings and timestamp source/precision.
+2. `output1` order book level mappings and timestamp source/precision (TR ID `FHKST01010200` documented; **no live field-level validation**).
 3. Minutes vs daily: session coverage, data quality and cross-venue meaning.
 4. `FID_ORG_ADJ_PRC` semantics **per endpoint**, not globally. Different KIS
    sample endpoints have used differing descriptions; do not silently unify.
@@ -66,3 +67,10 @@ For `inquire_daily_itemchartprice`, examples show:
 6. Market master coverage, refresh cadence, permitted local caching and
    redistribution license are still unverified.
 7. No tokens/accounts/real exchange data were fetched here.
+
+## Verification update (2026-11-01)
+
+The KIS publisher's `inquire_asking_price_exp_ccn.py` example explicitly sets
+`tr_id = "FHKST01010200"` for both real and demo selections. This verifies
+the **identifier in the official example**, not entitlement, actual response
+or response normalization in KTradeLink.
