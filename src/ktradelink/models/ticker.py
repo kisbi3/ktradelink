@@ -3,11 +3,10 @@
 This is a value type only: no broker calls, parsing, or credential handling.
 """
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from decimal import Decimal
 from types import MappingProxyType
-from typing import Mapping
-
 
 InfoScalar = str | int | bool | Decimal | None
 
