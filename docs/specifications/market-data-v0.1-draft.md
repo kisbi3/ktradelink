@@ -81,20 +81,41 @@ two conflicting representations now.
 
 ## 4. Proposed normalized data contract
 
-For first-version pure-Python usage, model objects can be typed records
-(`TypedDict`, dataclasses or equivalents **not chosen yet**). All payloads
-below are proposals, not current `ktradelink` objects.
+**Candidate representation:** a Python-native `@dataclass(frozen=True,
+slots=True)` per normalized model, with explicit `Decimal` prices,
+nullable source fields, and read-only sanitized `info` mappings.
+`frozen=True` alone does **not** recursively freeze nested mappings:
+make defensive copies and expose an immutable mapping as appropriate.
+Dataclass representation is a **proposal**, subject to the next review,
+not an exported `ktradelink` class. The CCXT six-element OHLCV list
+remains a potential future conversion helper, not the canonical schema.
 
 | Result | Required keys | Optional/nullable keys |
 | --- | --- | --- |
-| Ticker | `symbol`, `venue`, `broker`, `last`, `info` | `timestamp`, `retrieved_at`, `open`, `high`, `low`, `close`, `volume`, `bid`, `ask`, `scope_description` |
-| Candle | `symbol`, `venue`, `broker`, `timeframe`, `timestamp`, `session_date`, `open`, `high`, `low`, `close`, `volume`, `adjustment`, `session` | `complete`, `source_timestamp` |
+| Ticker | `symbol`, `venue`, `broker`, `last`, `info` | `timestamp`, `retrieved_at`, `open`, `high`, `low`, `previous_close`, `volume`, `bid`, `ask`, `scope_description` |
+| Candle | `symbol`, `venue`, `broker`, `timeframe`, `timestamp`, `session_date`, `open`, `high`, `low`, `close`, `volume`, `adjustment`, `session`, `info` | `complete`, `source_timestamp`, `retrieved_at`, `scope_description` |
 | OrderBook | `symbol`, `venue`, `broker`, `bids`, `asks`, `info` | `timestamp`, `retrieved_at`, `scope_description` |
 
-- **Missing prices:** `last` is present as a key but can be `None`;
-  `open/high/low/close/bid/ask` are `Decimal | None`. Distinct
-  `None` vs `Decimal(0)` must be preserved based on field-level evidence.
-  `volume` is an integer number of shares if supplied; otherwise `None`.
+- **Ticker semantics:** `last` is the latest **reported trade price**,
+  not proof of a recent exchange execution; `previous_close` is the
+  preceding **completed regular-session official closing price**, only
+  if the native quote response reliably identifies it. It is `None`
+  otherwise. **Ticker has no `close` field in v0.1** to prevent ambiguity
+  between last, current day's eventual close, and previous close.
+  `Candle.close` alone means that candle's closing price.
+- **Single native request for `fetch_ticker`:** do **not** make a hidden
+  second order-book TR call solely to fill `bid`/`ask`. If the chosen
+  native ticker response does not provide trustworthy best quotes, expose
+  `bid=None` and `ask=None`. Consumers explicitly call
+  `fetch_order_book` if they need book data. The quote's native
+  endpoint and estimated request cost belong in capability metadata.
+- **Missing prices:** `last`, `previous_close`, and optional ticker
+  `open/high/low/bid/ask` are `Decimal | None`. Candle
+  `open/high/low/close` and book level prices require trustworthy
+  `Decimal` values; missing required values are schema errors rather than
+  fabricated zeros. Distinct `None` versus `Decimal(0)` must be preserved
+  based on field-level evidence. `volume` is integer shares if supplied;
+  otherwise `None` where the model permits null values.
 - **Precision (proposed):** parse currency prices as `Decimal`, not
   binary floats. For first-version domestic common stocks, currency is KRW
   and quantity unit is shares; do not infer the units of monetary **turnover**.
@@ -104,9 +125,17 @@ below are proposals, not current `ktradelink` objects.
   metadata for a price *or* an actual signed delta, depending on field.
   Evidence for an `abs` transform is required per field. A missing field
   or non-numeric garbage should not be changed to zero silently.
-- **Raw data:** `info` defaults to an empty, allowlisted sanitized mapping.
-  Never include tokens, account identifiers, authentication headers, keys or
-  unconstrained upstream payloads in public models or logs.
+- **Provenance consistency:** `symbol`, `venue`, `broker`, and `info`
+  are required on **all three** normalized models. `info` defaults to an
+  empty sanitized, allowlisted mapping (e.g. `{}`). For any
+  `BROKER_COMPOSITE` result, a nonempty `scope_description` identifying
+  the **native publisher's aggregation scope** is required even for Candles.
+  If that scope is unknown, do not label the data composite.
+  `retrieved_at` (client time) may be recorded independently of
+  `timestamp` (vendor event time or documented candle anchor).
+- **Raw data:** never include tokens, account identifiers,
+  authentication headers, keys, or unrestricted native payloads
+  in public models or logs.
 
 ## 5. Time and market session semantics
 
@@ -209,8 +238,9 @@ error IDs map to common errors only when verified.
 
 ## 8. Unresolved design gates (must be reviewed before adapters)
 
-- [ ] Confirm `Candle` typed-record representation vs strict CCXT six-value
-      OHLCV arrays and possible dual convenience API.
+- [ ] Independently review the proposed shallow-immutable frozen dataclass
+      model, mutable `info` safeguards and optional CCXT array conversion.
+      Do not expose two competing representations prematurely.
 - [ ] Check native KIS and Kiwoom field names, nullable semantics, signed-price
       rules and response timestamps against vendor specifications and legal
       sanitized account fixtures.
