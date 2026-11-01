@@ -28,18 +28,27 @@ def test_fixture_builds_typed_ticker_with_nullable_bid_and_ask() -> None:
     path = Path(__file__).parent / "fixtures" / "spec" / "ticker-synthetic.json"
     data = json.loads(path.read_text(encoding="utf-8"))
     assert data["_synthetic"] is True
-    ticker = Ticker(
-        symbol=data["symbol"],
-        venue=data["venue"],
-        broker=data["broker"],
-        last=Decimal(data["last"]),
-        previous_close=Decimal(data["previous_close"]),
-        bid=data["bid"],
-        ask=data["ask"],
-        info=data["info"],
-    )
+
+    # Pass EVERY normalized fixture field, not only the required core fields.
+    native_fields = {key: value for key, value in data.items() if not key.startswith("_")}
+    price_fields = {"last", "open", "high", "low", "previous_close", "bid", "ask"}
+    normalized_fields = {
+        key: Decimal(value) if key in price_fields and value is not None else value
+        for key, value in native_fields.items()
+    }
+    ticker = Ticker(**normalized_fields)
+
+    for name, expected in normalized_fields.items():
+        assert getattr(ticker, name) == expected, f"Fixture field mismatch: {name}"
+
     assert ticker.last == Decimal("70500")
     assert ticker.previous_close == Decimal("70000")
+    assert ticker.open == Decimal("70100")
+    assert ticker.high == Decimal("70800")
+    assert ticker.low == Decimal("69900")
+    assert ticker.volume == 1500
+    assert ticker.timestamp is None
+    assert ticker.retrieved_at == 1793113200000
     assert ticker.bid is None and ticker.ask is None
     assert ticker.symbol == "005930"
     assert not hasattr(ticker, "to_dict")
