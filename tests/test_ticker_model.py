@@ -114,3 +114,21 @@ def test_composite_scope_required() -> None:
 def test_sensitive_or_mutable_info_is_rejected(info: object) -> None:
     with pytest.raises((TypeError, ValueError)):
         example_ticker(info=info)
+
+
+def test_equal_tickers_with_metadata_are_hashable() -> None:
+    left = example_ticker(info={"source_api_id": "ka10001", "source": "test"})
+    right = example_ticker(info={"source": "test", "source_api_id": "ka10001"})
+    assert left == right
+    assert hash(left) == hash(right)
+    assert {left, right} == {left}
+    assert {left: "price"}[right] == "price"
+
+
+def test_hash_includes_metadata_value_semantics() -> None:
+    left = example_ticker(info={"source_api_id": "ka10001"})
+    right = example_ticker(info={"source_api_id": "FHKST01010100"})
+    assert left != right
+    assert hash(left) == hash(left)  # Stable within a process.
+    assert {left: "kiwoom", right: "kis"}[right] == "kis"
+

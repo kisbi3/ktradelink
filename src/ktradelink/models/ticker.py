@@ -94,3 +94,29 @@ class Ticker:
                 raise ValueError("info decimals must be finite")
             snapshot[key] = value
         object.__setattr__(self, "info", MappingProxyType(snapshot))
+
+    def __hash__(self) -> int:
+        """Hash all equality fields, including sanitized scalar metadata.
+
+        A MappingProxyType is immutable but not hashable. Its contents are
+        deliberately restricted to hashable scalars during construction.
+        Sorting items makes the hash independent of source mapping order.
+        """
+        return hash((
+            self.symbol,
+            self.venue,
+            self.broker,
+            self.last,
+            tuple(sorted(self.info.items())),
+            self.timestamp,
+            self.retrieved_at,
+            self.open,
+            self.high,
+            self.low,
+            self.previous_close,
+            self.volume,
+            self.bid,
+            self.ask,
+            self.scope_description,
+        ))
+
