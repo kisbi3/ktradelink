@@ -39,8 +39,9 @@ jobs:
       - name: Smoke-test installed wheel outside checkout
         run: |
           python -m venv "$RUNNER_TEMP/wheel-venv"
-          "$RUNNER_TEMP/wheel-venv/bin/python" -m pip install --no-deps "$RUNNER_TEMP"/dist/ktradelink-*.whl
+          "$RUNNER_TEMP/wheel-venv/bin/python" -m pip install "$RUNNER_TEMP"/dist/ktradelink-*.whl
+          cp tools/check_installed_models.py "$RUNNER_TEMP/check_installed_models.py"
           (
             cd "$RUNNER_TEMP"
-            "$RUNNER_TEMP/wheel-venv/bin/python" -c 'import ktradelink; from importlib.metadata import version; assert version("ktradelink") == ktradelink.__version__; print(ktradelink.__file__)'
+            "$RUNNER_TEMP/wheel-venv/bin/python" -I check_installed_models.py
           )
