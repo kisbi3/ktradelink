@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "status": "proposed_not_approved",
+  "representation": "Python-native frozen dataclass proposal; not implemented",
+  "serialization": "Decimal serialized as decimal strings, None serialized as null; no official brokerage data",
+  "conditional_required": {
+    "venue=BROKER_COMPOSITE": [
+      "scope_description"
+    ]
+  },
+  "models": {
+    "Ticker": {
+      "fixture": "ticker-synthetic.json",
+      "required": [
+        "symbol",
+        "venue",
+        "broker",
+        "last",
+        "info"
+      ],
+      "optional": [
+        "timestamp",
+        "retrieved_at",
+        "open",
+        "high",
+        "low",
+        "previous_close",
+        "volume",
+        "bid",
+        "ask",
+        "scope_description"
+      ]
+    },
+    "Candle": {
+      "fixture": "candle-day-synthetic.json",
+      "required": [
+        "symbol",
+        "venue",
+        "broker",
+        "timeframe",
+        "timestamp",
+        "session_date",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "adjustment",
+        "session",
+        "info"
+      ],
+      "optional": [
+        "complete",
+        "source_timestamp",
+        "retrieved_at",
+        "scope_description"
+      ]
+    },
+    "OrderBook": {
+      "fixture": "order-book-synthetic.json",
+      "required": [
+        "symbol",
+        "venue",
+        "broker",
+        "bids",
+        "asks",
+        "info"
+      ],
+      "optional": [
+        "timestamp",
+        "retrieved_at",
+        "scope_description"
+      ]
+    }
+  }
+}

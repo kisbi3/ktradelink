@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "status": "proposed_not_approved",
+  "since_requires_until": true,
+  "until_exclusive": true,
+  "until_without_since": "invalid_parameter",
+  "output_order": "oldest_first",
+  "provider_request_budget": "finite_per_adapter",
+  "on_incomplete_range": "raise_incomplete_market_data",
+  "implementation_status": "no broker adapter implemented",
+  "note": "A proposal; actual source pagination and request budgets require verified broker responses."
+}

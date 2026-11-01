@@ -1,0 +1,30 @@
+{
+  "_synthetic": true,
+  "_note": "DESIGN FIXTURE ONLY, NOT KIS OR KIWOOM MARKET DATA",
+  "symbol": "005930",
+  "venue": "KRX",
+  "broker": "synthetic",
+  "timestamp": null,
+  "retrieved_at": 1793113200000,
+  "bids": [
+    [
+      "70000",
+      12
+    ],
+    [
+      "69900",
+      0
+    ]
+  ],
+  "asks": [
+    [
+      "70100",
+      9
+    ],
+    [
+      "70200",
+      20
+    ]
+  ],
+  "info": {}
+}

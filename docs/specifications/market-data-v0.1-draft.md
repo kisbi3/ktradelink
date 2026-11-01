@@ -1,74 +1,268 @@
-# Market-data Unified API v0.1 — DRAFT
+# Unified domestic-equity market-data API — v0.1 PROPOSAL
 
-- **Status:** Proposed, not approved or implemented
-- **Created:** 2026-10-28
-- **Target brokers:** Korea Investment & Securities (KIS), Kiwoom Securities
-- **Initial scope:** domestic equities, read-only
+- **Status:** Proposed for independent Gemini Web review and maintainer decision
+- **Last revised:** 2026-10-29
+- **Not implemented. No live broker or paper account has been queried.**
+- **First target:** KIS + Kiwoom **REST**; Korean listed common stocks, KRX
+  read-only market data. NXT/SOR/composite scopes are documented as future
+  conditional features, *not* an implicit KRX fallback.
+- Source evidence: [KIS](../brokers/kis-market-data.md) and
+  [Kiwoom REST](../brokers/kiwoom-market-data.md)
 
-## Motivation
+This proposal makes falsifiable choices so reviewers can reject them before
+adapter development. A name matching a vendor endpoint is **not** a declaration
+that KTradeLink supports it.
 
-Applications should call the same methods and receive normalized fields when
-the underlying brokers actually support equivalent functionality.
+## 1. Design goals
 
-## Proposed public methods
+1. A broker swap must preserve the **meaning** of the returned price, candle,
+   quote book and session, or raise an explicit error.
+2. User-facing `symbol` is a string with leading zeros intact, never an int.
+3. Instrument identity, market-data source and order routing are distinct.
+   **Order routing is outside v0.1**.
+4. Model sources as potentially stale/partial; distinguish a missing value from
+   a genuine zero; never invent a native exchange timestamp.
+5. Brokerage capabilities are explicit and *per method, venue, environment,
+   timeframe and asset class*, not an unconditional `has=True`.
+6. Prefer read-only fixtures in CI; do not fetch live quotes or credentials.
 
-| Method | Intended result | Notes |
+## 2. Candidate public interface (signatures for review)
+
+```python
+# Conceptual contract; these functions do not exist yet.
+broker.load_markets(*, reload=False)
+
+broker.fetch_ticker(symbol: str, *, venue: str = "KRX", params=None)
+broker.fetch_order_book(
+    symbol: str, limit: int | None = None, *,
+    venue: str = "KRX", params=None
+)
+broker.fetch_ohlcv(
+    symbol: str, timeframe: str = "1d",
+    since: int | None = None, limit: int | None = None, *,
+    until: int | None = None, venue: str = "KRX", adjustment: str = "raw",
+    session: str = "regular", params=None
+)
+```
+
+`params` is reserved for **documented broker-native optional parameters**;
+common choices such as `venue`, `adjustment`, and `session` must be explicit
+rather than hidden. Unknown or conflicting options must raise an error.
+
+The API names deliberately resemble CCXT, but the proposed data contract is
+**Python-native**, not guaranteed byte-for-byte compatible with CCXT's list
+return types. An eventual `to_ccxt_ohlcv()` or compatibility layer may be
+offered separately after the normalized contract is stable. Do not implement
+two conflicting representations now.
+
+## 3. Symbol, venue and quote-source semantics
+
+- **First-version stock symbol:** exactly six ASCII digits, e.g. `"005930"`.
+  Do not strip leading zeros, accept integer symbols, or auto-guess ETFs/ETNs,
+  indices, bonds or derivatives. Expand the instrument registry later.
+- **Proposed `venue` values:** `KRX`, `NXT`, `BROKER_COMPOSITE`.
+  `KRX` is the explicit **default** for v0.1 domestic-stock retrieval.
+  Passing `NXT` or `BROKER_COMPOSITE` is an unsupported-capability error
+  until that specific endpoint, account environment and behavior are verified.
+- **Instrument vs market-data scope:** `venue="BROKER_COMPOSITE"` means a
+  broker-defined multi-market quote, not a physical exchange and **never an
+  order execution destination**. The result must record source semantics and
+  source broker. Do not assume KIS `UN` and Kiwoom `_AL` SOR are identical.
+- KIS example: `FID_INPUT_ISCD=005930` and
+  `FID_COND_MRKT_DIV_CODE=J|NX|UN`.
+- Kiwoom example: `stk_cd=005930|005930_NX|005930_AL` (the latter two
+  are market-qualified *native* IDs). Query mapping must be endpoint-specific.
+- **No fallback:** if the selected venue is unavailable, do not silently
+  fetch KRX or an aggregated quote instead. Raise `UnsupportedCapability`
+  or an explicit broker/data-access error.
+- Each normalized object must contain both `symbol` and `venue` as well as
+  `broker`; composite quotes also require a `scope_description` naming the
+  native market source.
+
+## 4. Proposed normalized data contract
+
+**Candidate representation:** a Python-native `@dataclass(frozen=True,
+slots=True)` per normalized model, with explicit `Decimal` prices,
+nullable source fields, and read-only sanitized `info` mappings.
+`frozen=True` alone does **not** recursively freeze nested mappings:
+make defensive copies and expose an immutable mapping as appropriate.
+Dataclass representation is a **proposal**, subject to the next review,
+not an exported `ktradelink` class. The CCXT six-element OHLCV list
+remains a potential future conversion helper, not the canonical schema.
+
+| Result | Required keys | Optional/nullable keys |
 | --- | --- | --- |
-| `load_markets()` | supported instruments and metadata | shape TBD |
-| `fetch_ticker(symbol, params=None)` | current price and quote summary | fields TBD |
-| `fetch_ohlcv(symbol, timeframe="1d", since=None, limit=None, params=None)` | list of candles | only broker-supported intervals |
-| `fetch_order_book(symbol, limit=None, params=None)` | normalized bids and asks | only when broker exposes the necessary depth |
+| Ticker | `symbol`, `venue`, `broker`, `last`, `info` | `timestamp`, `retrieved_at`, `open`, `high`, `low`, `previous_close`, `volume`, `bid`, `ask`, `scope_description` |
+| Candle | `symbol`, `venue`, `broker`, `timeframe`, `timestamp`, `session_date`, `open`, `high`, `low`, `close`, `volume`, `adjustment`, `session`, `info` | `complete`, `source_timestamp`, `retrieved_at`, `scope_description` |
+| OrderBook | `symbol`, `venue`, `broker`, `bids`, `asks`, `info` | `timestamp`, `retrieved_at`, `scope_description` |
 
-All methods are **proposals**. The actual broker capability list must be
-verified against current official documentation before implementing any of
-them. A declared unsupported method should fail explicitly, not silently
-substitute a different dataset.
+- **Ticker semantics:** `last` is the latest **reported trade price**,
+  not proof of a recent exchange execution; `previous_close` is the
+  preceding **completed regular-session official closing price**, only
+  if the native quote response reliably identifies it. It is `None`
+  otherwise. **Ticker has no `close` field in v0.1** to prevent ambiguity
+  between last, current day's eventual close, and previous close.
+  `Candle.close` alone means that candle's closing price.
+- **Single native request for `fetch_ticker`:** do **not** make a hidden
+  second order-book TR call solely to fill `bid`/`ask`. If the chosen
+  native ticker response does not provide trustworthy best quotes, expose
+  `bid=None` and `ask=None`. Consumers explicitly call
+  `fetch_order_book` if they need book data. The quote's native
+  endpoint and estimated request cost belong in capability metadata.
+- **Missing prices:** `last`, `previous_close`, and optional ticker
+  `open/high/low/bid/ask` are `Decimal | None`. Candle
+  `open/high/low/close` and book level prices require trustworthy
+  `Decimal` values; missing required values are schema errors rather than
+  fabricated zeros. Distinct `None` versus `Decimal(0)` must be preserved
+  based on field-level evidence. `volume` is integer shares if supplied;
+  otherwise `None` where the model permits null values.
+- **Precision (proposed):** parse currency prices as `Decimal`, not
+  binary floats. For first-version domestic common stocks, currency is KRW
+  and quantity unit is shares; do not infer the units of monetary **turnover**.
+  JSON serialization of Decimal would require decimal *strings* and versioned
+  schemas. Tick-size/order rules are separate concerns.
+- **Source sign:** a leading `+`/`-` in a Kiwoom string may be directional
+  metadata for a price *or* an actual signed delta, depending on field.
+  Evidence for an `abs` transform is required per field. A missing field
+  or non-numeric garbage should not be changed to zero silently.
+- **Provenance consistency:** `symbol`, `venue`, `broker`, and `info`
+  are required on **all three** normalized models. `info` defaults to an
+  empty sanitized, allowlisted mapping (e.g. `{}`). For any
+  `BROKER_COMPOSITE` result, a nonempty `scope_description` identifying
+  the **native publisher's aggregation scope** is required even for Candles.
+  If that scope is unknown, do not label the data composite.
+  `retrieved_at` (client time) may be recorded independently of
+  `timestamp` (vendor event time or documented candle anchor).
+- **Raw data:** never include tokens, account identifiers,
+  authentication headers, keys, or unrestricted native payloads
+  in public models or logs.
 
-## Proposed normalized fields
+## 5. Time and market session semantics
 
-Ticker candidate: `symbol`, `timestamp`, `datetime`, `last`, `open`, `high`,
-`low`, `close`, `volume`, `bid`, `ask`, `info`.
+- All values named `timestamp` or `retrieved_at` are **UTC Unix epoch
+  milliseconds**, typed `int | None`. A quote/order-book timestamp is
+  `None` unless the publisher supplies a trustworthy event time.
+  `retrieved_at` is a *client receive time*, never an exchange time.
+- Day candles represent a **KST exchange session date**; the required
+  `session_date` is an ISO date (`YYYY-MM-DD`). Proposed `timestamp`
+  convention for `1d`: **00:00:00 Asia/Seoul of `session_date`**, converted
+  to UTC Unix ms as a *session anchor*, not as a real trade time.
+  Example: `2026-10-28` session anchors at
+  `2026-10-27T15:00:00Z`, which is correct for KST midnight. Consumers must
+  NOT compare its UTC date to `session_date` and call it a mismatch.
+- Minute candles require an explicit source date + time in KST and a
+  `timestamp` for the **start of the interval**; reject unknown end-vs-start
+  conventions until verified. If the source gives only `HHMMSS`, require a
+  verified trading date, not local-wall-clock inference.
+- For weekly/monthly bars, the interval anchor/session label remains **TBD**;
+  no `1w`/`1M` support may be advertised until defined.
+- Keep `session="regular"` as v0.1 requested scope, not an assumption that
+  all broker API responses exclude pre/post market and NXT trading. If the
+  adapter cannot establish regular-session coverage, error instead of
+  mislabeling mixed-session bars.
+- Session timestamps, DST, holidays, and exchange schedule require
+  explicit tests. Korea uses `Asia/Seoul` for current market data.
 
-OHLCV candidate: `[timestamp, open, high, low, close, volume]` with a UTC Unix
-millisecond timestamp (same basic approach as CCXT).
+## 6. Candle and book ordering, pagination and adjustments
 
-Order-book candidate: `symbol`, `timestamp`, `bids`, `asks`, `info`; bid/ask
-levels would include price and size.
+- `fetch_ohlcv()` returns candles **oldest to newest** by timestamp, without
+  duplicate timestamps in a single `venue/timeframe/adjustment/session`
+  series. Whether the source sorts newest-first is implementation detail.
+- **Bounded history mode (v0.1 proposal):** when `since` is supplied, require
+  `until` as an explicit upper bound. `since` is **inclusive** and `until`
+  **exclusive**, both UTC Unix ms. Reject `since >= until`, `until` without
+  `since`, and a lone `since` with `InvalidParameter` for now rather than
+  silently scanning potentially years of data. A future provider-verified
+  cursor/efficient-range implementation may relax this limitation.
+- Within a bounded interval `[since, until)`, return the earliest `limit`
+  candles if `limit` is given, ordered oldest to newest. A positive integer
+  `limit` is an **output cap**, not permission to abandon unseen older data.
+  With `limit=None`, return the entire requested interval **only if** it can
+  be proven complete within a documented request budget.
+- **Recent-history mode:** with both `since=None` and `until=None`,
+  return the most recent `limit` bars, oldest first. `limit=None` uses a
+  conservative, documented, finite per-adapter default *once verified*; never
+  mean unlimited history. Reject nonpositive, boolean or noninteger limits.
+- **Provider-facing pagination:** KIS `inquire-daily-itemchartprice` accepts
+  start/end dates and returns at most 100 records per call (per publisher
+  sample); Kiwoom `ka10081` uses `base_dt` and a continuation cursor. Both
+  can surface newest-first slices. Convert `[since,until)` to a verified
+  market-date request window; for daily bars, use KST **session anchors** to
+  decide which exchange dates are in range, not naive UTC calendar dates.
+  Use split KIS date windows or Kiwoom continuation **only after verifying
+  actual page and boundary behavior**. The request scheduler must have a
+  finite, explicit, per-adapter request/page budget and respect documented
+  rate limits and provider retention.
+- **Completeness is required:** if the requested earliest `limit` cannot
+  be established within the configured budget, continuation is unavailable,
+  page ordering is unknown, or source coverage is insufficient, raise
+  `IncompleteMarketData` with a reason; do not silently return a truncated
+  prefix or substitute recent bars. A proved end-of-history boundary may
+  legitimately produce fewer results. Never retry until exhaustion in a
+  rate-limit loop. Broker request costs and page budgets are **unverified**.
+- `fetch_order_book`: `bids` descending by price, `asks` ascending;
+  levels are `[Decimal(price), int(shares)]`. An actual zero-size quoted
+  level may be preserved when its price was provided; **missing** price and
+  level information must not be synthesized. `limit` counts levels on
+  *each side*; exceeding verified source depth must error rather than
+  silently clamp.
+- **Adjustment:** `raw` vs `adjusted` is a semantic input, not a generic
+  `FID_ORG_ADJ_PRC` value. The KIS adjustment parameter meaning can vary
+  across endpoints; Kiwoom's `upd_stkpc_tp` needs independent per-ID mapping.
+  The proposed default `raw` must **not** be published until backed by
+  authoritative response fixtures; otherwise fail with unsupported option.
+- Incomplete current session bar and suspended trading must be distinguished
+  from missing data. Define their exact status after test fixtures are available.
 
-`info` should preserve a sanitized broker-native payload where permitted.
-Missing values must be distinguishable from genuine zeros.
+## 7. Capabilities and exceptions (names proposed)
 
-## Open questions requiring formal decisions
+**Capability states**: `documented_candidate`, `unverified`,
+`supported`, `conditional`, `unsupported`. **Only `supported`**
+means both implemented and passing broker-specific normalized contract tests.
+No capabilities are `supported` today. Future discovery must allow
+method, symbol asset class, environment, venue, timeframe and permission
+restrictions (with documented evidence references).
 
-1. **Symbols:** canonical instrument identifier (e.g. domestic six-digit code)
-   versus market-qualified identifier; avoid confusing trading venue with the
-   instrument itself.
-2. **Venues:** KRX/NXT selection and broker-specific market codes; never infer
-   an executable venue from a quote without an explicit rule.
-3. **Numeric representation:** `Decimal` versus `float`, including serialization
-   and unit handling.
-4. **Timestamps:** native timestamps, session boundaries, KST-to-UTC conversion,
-   and daily-bar timestamp conventions.
-5. **Price semantics:** adjusted/unadjusted OHLCV, auction/closing price,
-   trading-session qualification, market suspensions and missing data.
-6. **Market-data availability:** broker entitlements and endpoint limits; no
-   assumption that each broker offers a full order book or arbitrary intervals.
-7. **Rate limits and caching:** quotas are broker-specific and must be validated.
-8. **Exception taxonomy:** distinguish invalid input, authorization, quota,
-   temporarily unavailable endpoint, unsupported capability and parse mismatch.
-9. **Sync/async API:** public naming and behavior across Python execution modes.
+**Proposed error taxonomy**:
 
-## Verification checklist before approval
+- `InvalidSymbol`, `InvalidVenue`, `InvalidTimeframe`,
+  `InvalidParameter`
+- `UnsupportedCapability` (feature/option not implemented or proven)
+- `AuthenticationError`, `PermissionDenied`
+- `RateLimitExceeded`, `BrokerUnavailable`, `TransportError`
+- `ResponseSchemaError`, `IncompleteMarketData`
 
-- [ ] KIS official API endpoints and fields mapped to each proposed method
-- [ ] Kiwoom official API endpoints and fields mapped to each proposed method
-- [ ] Capability matrix includes unsupported and conditional cases
-- [ ] Timestamp, symbol, numeric and venue decisions documented
-- [ ] Sanitized samples and contract tests specified
-- [ ] Gemini Web independent review recorded with a target commit SHA
-- [ ] Human maintainer approval documented
+An HTTP success with missing required fields is **not** a valid ticker/candle.
+No broad `except: return []` or ungrounded automatic retries. Raw broker
+error IDs map to common errors only when verified.
 
-## Explicit non-goals for this spec
+## 8. Unresolved design gates (must be reviewed before adapters)
 
-No orders, live credentials, automatic execution, backtesting, MCP or hosted
-service. These require later separate designs and reviews.
+- [ ] Independently review the proposed shallow-immutable frozen dataclass
+      model, mutable `info` safeguards and optional CCXT array conversion.
+      Do not expose two competing representations prematurely.
+- [ ] Check native KIS and Kiwoom field names, nullable semantics, signed-price
+      rules and response timestamps against vendor specifications and legal
+      sanitized account fixtures.
+- [ ] Verify KIS daily adjustment behavior *per endpoint* and Kiwoom `ka10081`
+      chart's adjustment, timestamps and continuation; add raw and adjusted
+      examples, no guessing.
+- [ ] Verify both providers' quote scope/mode, paper vs real entitlements and
+      NXT/SOR rules; explicit KRX-only initial support is the safe option.
+- [ ] Define `load_markets` master sources, cache invalidation, session/venue
+      listing, and data rights before enabling it.
+- [ ] Create contract fixtures for genuine vendor responses with sensitive
+      information removed. Synthetic examples are only **design examples**.
+- [ ] Confirm per-venue interval availability, the bounded `[since,until)`
+      query policy and provider request budgets with source fixtures; test
+      historical intervals beyond one native page, exchange holidays, duplicate
+      boundary bars, and exhaustion without silent truncation.
+- [ ] Check empty order-book levels, out-of-session data and date boundaries.
+- [ ] Record Gemini Web review pinned to a commit SHA, resolve findings, and
+      obtain human approval. Until then this document is PROPOSED.
+
+## 9. Non-goals
+
+No functional KIS/Kiwoom adapter, no real data, no WebSocket streaming, no
+orders/accounts, no broker credential processing, no backtesting, no MCP, no
+hosted SaaS, and no market-data redistribution.
