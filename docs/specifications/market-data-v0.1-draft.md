@@ -40,7 +40,7 @@ broker.fetch_order_book(
 broker.fetch_ohlcv(
     symbol: str, timeframe: str = "1d",
     since: int | None = None, limit: int | None = None, *,
-    venue: str = "KRX", adjustment: str = "raw",
+    until: int | None = None, venue: str = "KRX", adjustment: str = "raw",
     session: str = "regular", params=None
 )
 ```
@@ -139,14 +139,38 @@ below are proposals, not current `ktradelink` objects.
 - `fetch_ohlcv()` returns candles **oldest to newest** by timestamp, without
   duplicate timestamps in a single `venue/timeframe/adjustment/session`
   series. Whether the source sorts newest-first is implementation detail.
-- If `since` is provided, interpret it as UTC Unix ms **inclusive** and
-  return up to `limit` earliest items at or after `since`. Without `since`,
-  `limit` refers to the most recent `limit` available candles, still returned
-  oldest-first. All limits must be validated as positive integers.
-- No hidden truncation: if the requested range needs pagination the adapter
-  must implement a proven continuation path or explicitly reject that request.
-  Fewer items are acceptable only when a genuine end-of-history boundary
-  is established, not merely because a provider response was capped.
+- **Bounded history mode (v0.1 proposal):** when `since` is supplied, require
+  `until` as an explicit upper bound. `since` is **inclusive** and `until`
+  **exclusive**, both UTC Unix ms. Reject `since >= until`, `until` without
+  `since`, and a lone `since` with `InvalidParameter` for now rather than
+  silently scanning potentially years of data. A future provider-verified
+  cursor/efficient-range implementation may relax this limitation.
+- Within a bounded interval `[since, until)`, return the earliest `limit`
+  candles if `limit` is given, ordered oldest to newest. A positive integer
+  `limit` is an **output cap**, not permission to abandon unseen older data.
+  With `limit=None`, return the entire requested interval **only if** it can
+  be proven complete within a documented request budget.
+- **Recent-history mode:** with both `since=None` and `until=None`,
+  return the most recent `limit` bars, oldest first. `limit=None` uses a
+  conservative, documented, finite per-adapter default *once verified*; never
+  mean unlimited history. Reject nonpositive, boolean or noninteger limits.
+- **Provider-facing pagination:** KIS `inquire-daily-itemchartprice` accepts
+  start/end dates and returns at most 100 records per call (per publisher
+  sample); Kiwoom `ka10081` uses `base_dt` and a continuation cursor. Both
+  can surface newest-first slices. Convert `[since,until)` to a verified
+  market-date request window; for daily bars, use KST **session anchors** to
+  decide which exchange dates are in range, not naive UTC calendar dates.
+  Use split KIS date windows or Kiwoom continuation **only after verifying
+  actual page and boundary behavior**. The request scheduler must have a
+  finite, explicit, per-adapter request/page budget and respect documented
+  rate limits and provider retention.
+- **Completeness is required:** if the requested earliest `limit` cannot
+  be established within the configured budget, continuation is unavailable,
+  page ordering is unknown, or source coverage is insufficient, raise
+  `IncompleteMarketData` with a reason; do not silently return a truncated
+  prefix or substitute recent bars. A proved end-of-history boundary may
+  legitimately produce fewer results. Never retry until exhaustion in a
+  rate-limit loop. Broker request costs and page budgets are **unverified**.
 - `fetch_order_book`: `bids` descending by price, `asks` ascending;
   levels are `[Decimal(price), int(shares)]`. An actual zero-size quoted
   level may be preserved when its price was provided; **missing** price and
@@ -199,8 +223,11 @@ error IDs map to common errors only when verified.
       listing, and data rights before enabling it.
 - [ ] Create contract fixtures for genuine vendor responses with sensitive
       information removed. Synthetic examples are only **design examples**.
-- [ ] Confirm per-venue interval availability, `since`/paging completeness,
-      empty order-book levels, out-of-session data and date boundaries.
+- [ ] Confirm per-venue interval availability, the bounded `[since,until)`
+      query policy and provider request budgets with source fixtures; test
+      historical intervals beyond one native page, exchange holidays, duplicate
+      boundary bars, and exhaustion without silent truncation.
+- [ ] Check empty order-book levels, out-of-session data and date boundaries.
 - [ ] Record Gemini Web review pinned to a commit SHA, resolve findings, and
       obtain human approval. Until then this document is PROPOSED.
 
