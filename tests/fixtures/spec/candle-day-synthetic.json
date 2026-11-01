@@ -15,5 +15,6 @@
   "adjustment": "raw",
   "session": "regular",
   "complete": true,
-  "source_timestamp": null
+  "source_timestamp": null,
+  "info": {}
 }
