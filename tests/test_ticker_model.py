@@ -132,3 +132,34 @@ def test_hash_includes_metadata_value_semantics() -> None:
     assert hash(left) == hash(left)  # Stable within a process.
     assert {left: "kiwoom", right: "kis"}[right] == "kis"
 
+
+@pytest.mark.parametrize(
+    "field_name",
+    [
+        "app-key",
+        "app_key",
+        "AppKey",
+        "api-key",
+        "api_key",
+        "apiKey",
+        "CANO",
+        "cust-CANO",
+        "acnt_no",
+        "ACNT_PRDT_CD",
+        "acct_no",
+        "personalseckey",
+        "PERSONALSECKEY",
+        "refresh_token",
+    ],
+)
+def test_broker_specific_credential_metadata_names_are_rejected(field_name: str) -> None:
+    with pytest.raises(ValueError, match="authentication/account"):
+        example_ticker(info={field_name: "redacted-for-test"})
+
+
+def test_benign_metadata_keys_are_not_blocked_by_short_cano_name() -> None:
+    ticker = example_ticker(
+        info={"source_api_id": "FHKST01010100", "canonical_symbol": "005930"}
+    )
+    assert ticker.info["canonical_symbol"] == "005930"
+

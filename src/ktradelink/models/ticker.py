@@ -3,6 +3,7 @@
 This is a value type only: no broker calls, parsing, or credential handling.
 """
 
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from decimal import Decimal
@@ -10,9 +11,10 @@ from types import MappingProxyType
 
 InfoScalar = str | int | bool | Decimal | None
 
-_SENSITIVE_KEYS = (
+# A denylist is defense in depth, never a substitute for source-field allowlisting.
+_SENSITIVE_KEY_FRAGMENTS = (
     "token", "secret", "password", "account", "authorization",
-    "credential", "cookie", "api_key", "appkey",
+    "credential", "cookie", "apikey", "appkey", "acnt", "acct", "seckey",
 )
 _VENUES = frozenset({"KRX", "NXT", "BROKER_COMPOSITE"})
 _PRICES = ("last", "open", "high", "low", "previous_close", "bid", "ask")
@@ -85,8 +87,12 @@ class Ticker:
         for key, value in self.info.items():
             if not isinstance(key, str):
                 raise TypeError("info keys must be strings")
-            normalized_key = key.casefold().replace("-", "_")
-            if any(term in normalized_key for term in _SENSITIVE_KEYS):
+            normalized_key = "".join(char for char in key.casefold() if char.isalnum())
+            key_parts = re.split(r"[^a-z0-9]+", key.casefold())
+            if (
+                any(term in normalized_key for term in _SENSITIVE_KEY_FRAGMENTS)
+                or "cano" in key_parts
+            ):
                 raise ValueError("info must not contain authentication/account fields")
             if not (value is None or isinstance(value, (str, int, bool, Decimal))):
                 raise TypeError("info values must be immutable scalar metadata")
