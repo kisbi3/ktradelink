@@ -6,7 +6,7 @@ Pinned source SHA: d8e55a5ef48fa1f08c65b86b110f58c0b6efae20
 Base main SHA: f02123b673e1e57fac597d52271cb31e5999465c
 Review branch: review/pr7-full-source-d8e55a5
 Target: 32 tracked files (5 PR changes + 27 context files)
-Current assembly status: INCOMPLETE - first batch only.
+Current assembly status: COMPLETE. All 32 tracked original files included.
 Each file's code/body is copied verbatim from its Git blob at the pinned source.
 Review text contains delimiters and metadata outside the source blocks.
 No live broker credentials or trade calls. Public API is typed-only; no to_dict.
@@ -1519,3 +1519,623 @@ __all__ = ["Ticker"]
 ============================================================================
 END ORIGINAL FILE: src/ktradelink/models/__init__.py
 ============================================================================
+
+============================================================================
+BEGIN ORIGINAL FILE: src/ktradelink/models/ticker.py
+GIT BLOB SHA: a231621627bc04e295f90dcf0fe2700dfefb2630
+PR CHANGED: true
+SOURCE LINES: 96
+============================================================================
+"""Broker-neutral, typed current-quote value model.
+
+This is a value type only: no broker calls, parsing, or credential handling.
+"""
+
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from decimal import Decimal
+from types import MappingProxyType
+
+InfoScalar = str | int | bool | Decimal | None
+
+_SENSITIVE_KEYS = (
+    "token", "secret", "password", "account", "authorization",
+    "credential", "cookie", "api_key", "appkey",
+)
+_VENUES = frozenset({"KRX", "NXT", "BROKER_COMPOSITE"})
+_PRICES = ("last", "open", "high", "low", "previous_close", "bid", "ask")
+_TIMESTAMPS = ("timestamp", "retrieved_at")
+
+
+@dataclass(frozen=True, slots=True)
+class Ticker:
+    """Normalized quote metadata with an explicit source and nullable prices.
+
+    Prices must already be normalized to Decimal by a broker-specific decoder.
+    This constructor never guesses a broker-native field's sign or timestamp.
+    The object intentionally has no public dictionary/JSON conversion method.
+    """
+
+    symbol: str
+    venue: str
+    broker: str
+    last: Decimal | None
+    info: Mapping[str, InfoScalar] = field(default_factory=dict, repr=False)
+    timestamp: int | None = None
+    retrieved_at: int | None = None
+    open: Decimal | None = None
+    high: Decimal | None = None
+    low: Decimal | None = None
+    previous_close: Decimal | None = None
+    volume: int | None = None
+    bid: Decimal | None = None
+    ask: Decimal | None = None
+    scope_description: str | None = None
+
+    def __post_init__(self) -> None:
+        for name in ("symbol", "broker"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value or value != value.strip():
+                raise ValueError(f"{name} must be a nonempty, trimmed string")
+
+        if not isinstance(self.venue, str) or self.venue not in _VENUES:
+            raise ValueError(f"venue must be one of {sorted(_VENUES)!r}")
+        if self.venue == "BROKER_COMPOSITE" and (
+            not isinstance(self.scope_description, str)
+            or not self.scope_description.strip()
+        ):
+            raise ValueError("composite quote requires scope_description")
+        if self.scope_description is not None and (
+            not isinstance(self.scope_description, str)
+            or self.scope_description != self.scope_description.strip()
+            or not self.scope_description
+        ):
+            raise ValueError("scope_description must be a nonempty, trimmed string")
+
+        for name in _PRICES:
+            value = getattr(self, name)
+            if value is not None and (
+                not isinstance(value, Decimal)
+                or not value.is_finite()
+                or value < 0
+            ):
+                raise ValueError(f"{name} must be a nonnegative finite Decimal or None")
+        for name in (*_TIMESTAMPS, "volume"):
+            value = getattr(self, name)
+            if value is not None and (
+                isinstance(value, bool) or not isinstance(value, int) or value < 0
+            ):
+                raise ValueError(f"{name} must be a nonnegative integer or None")
+
+        if not isinstance(self.info, Mapping):
+            raise TypeError("info must be a mapping of safe scalar metadata")
+        snapshot: dict[str, InfoScalar] = {}
+        for key, value in self.info.items():
+            if not isinstance(key, str):
+                raise TypeError("info keys must be strings")
+            normalized_key = key.casefold().replace("-", "_")
+            if any(term in normalized_key for term in _SENSITIVE_KEYS):
+                raise ValueError("info must not contain authentication/account fields")
+            if not (value is None or isinstance(value, (str, int, bool, Decimal))):
+                raise TypeError("info values must be immutable scalar metadata")
+            if isinstance(value, Decimal) and not value.is_finite():
+                raise ValueError("info decimals must be finite")
+            snapshot[key] = value
+        object.__setattr__(self, "info", MappingProxyType(snapshot))
+============================================================================
+END ORIGINAL FILE: src/ktradelink/models/ticker.py
+============================================================================
+
+============================================================================
+BEGIN ORIGINAL FILE: src/ktradelink/py.typed
+GIT BLOB SHA: e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+PR CHANGED: false
+SOURCE LINES: 0
+============================================================================
+
+============================================================================
+END ORIGINAL FILE: src/ktradelink/py.typed
+============================================================================
+
+============================================================================
+BEGIN ORIGINAL FILE: tests/fixtures/spec/README.md
+GIT BLOB SHA: ea19658edf33638a359bc536f6d865e2105e67ba
+PR CHANGED: false
+SOURCE LINES: 20
+============================================================================
+# Synthetic market-data design fixtures
+
+These files are **invented values** for checking documented contract
+invariants before any adapter exists. They are **not** captured or verified KIS
+or Kiwoom responses. Do not reuse them as vendor field-mapping fixtures.
+
+Prices are decimal strings so the tests can parse them with `Decimal`.
+The daily date fixture shows KST session anchoring to previous UTC calendar
+date; the order book tests show bid/ask order and zero quantity preservation.
+
+Real provider-response contract tests must use authorized redacted samples,
+reference the official field-level specification, and remain separate from
+these conceptual examples.
+
+The Ticker fixture intentionally has `bid=null` and `ask=null`: no implicit
+second book request is allowed. It distinguishes `last` from
+`previous_close`, and does not include an ambiguous `Ticker.close` field.
+All three model fixtures are checked against
+`docs/specifications/normalized-models-v0.1.json`, which in turn is checked
+against the required/optional-key table in the Markdown proposal.
+============================================================================
+END ORIGINAL FILE: tests/fixtures/spec/README.md
+============================================================================
+
+============================================================================
+BEGIN ORIGINAL FILE: tests/fixtures/spec/candle-day-synthetic.json
+GIT BLOB SHA: 8ed23128528d2b985e75b651a4d92dc5fd98bceb
+PR CHANGED: false
+SOURCE LINES: 20
+============================================================================
+{
+  "_synthetic": true,
+  "_note": "DESIGN FIXTURE ONLY, NOT KIS OR KIWOOM MARKET DATA",
+  "symbol": "005930",
+  "venue": "KRX",
+  "broker": "synthetic",
+  "timeframe": "1d",
+  "timestamp": 1793113200000,
+  "session_date": "2026-10-28",
+  "open": "70000",
+  "high": "71000",
+  "low": "69000",
+  "close": "70500",
+  "volume": 12345,
+  "adjustment": "raw",
+  "session": "regular",
+  "complete": true,
+  "source_timestamp": null,
+  "info": {}
+}
+============================================================================
+END ORIGINAL FILE: tests/fixtures/spec/candle-day-synthetic.json
+============================================================================
+
+============================================================================
+BEGIN ORIGINAL FILE: tests/fixtures/spec/order-book-synthetic.json
+GIT BLOB SHA: 393c36e8713c38faa55dc234970faf426765a9a6
+PR CHANGED: false
+SOURCE LINES: 30
+============================================================================
+{
+  "_synthetic": true,
+  "_note": "DESIGN FIXTURE ONLY, NOT KIS OR KIWOOM MARKET DATA",
+  "symbol": "005930",
+  "venue": "KRX",
+  "broker": "synthetic",
+  "timestamp": null,
+  "retrieved_at": 1793113200000,
+  "bids": [
+    [
+      "70000",
+      12
+    ],
+    [
+      "69900",
+      0
+    ]
+  ],
+  "asks": [
+    [
+      "70100",
+      9
+    ],
+    [
+      "70200",
+      20
+    ]
+  ],
+  "info": {}
+}
+============================================================================
+END ORIGINAL FILE: tests/fixtures/spec/order-book-synthetic.json
+============================================================================
+
+============================================================================
+BEGIN ORIGINAL FILE: tests/fixtures/spec/ticker-synthetic.json
+GIT BLOB SHA: 1bd57f22ad1e428d9684abdeb5d483f478753704
+PR CHANGED: false
+SOURCE LINES: 18
+============================================================================
+{
+  "_synthetic": true,
+  "_note": "DESIGN FIXTURE ONLY, NOT KIS OR KIWOOM MARKET DATA",
+  "symbol": "005930",
+  "venue": "KRX",
+  "broker": "synthetic",
+  "timestamp": null,
+  "retrieved_at": 1793113200000,
+  "last": "70500",
+  "previous_close": "70000",
+  "open": "70100",
+  "high": "70800",
+  "low": "69900",
+  "volume": 1500,
+  "bid": null,
+  "ask": null,
+  "info": {}
+}
+============================================================================
+END ORIGINAL FILE: tests/fixtures/spec/ticker-synthetic.json
+============================================================================
+
+============================================================================
+BEGIN ORIGINAL FILE: tests/test_gitignore.py
+GIT BLOB SHA: 9e9f124af4c619e0bc09523ad13aed7e1709009a
+PR CHANGED: false
+SOURCE LINES: 33
+============================================================================
+"""Prevent accidentally tracking common local brokerage secrets.
+
+.gitignore is a convenience safeguard, not a replacement for secret scanning.
+"""
+
+import shutil
+import subprocess
+from pathlib import Path
+
+import pytest
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "broker_access.token",
+        "access_token.json",
+        "broker_refresh_token_cache.json",
+        "NPKI/user/SignCert.der",
+    ],
+)
+def test_gitignore_excludes_local_broker_credentials(path: str) -> None:
+    if shutil.which("git") is None:
+        pytest.skip("git executable is required for ignore pattern contract tests")
+
+    root = Path(__file__).resolve().parents[1]
+    result = subprocess.run(
+        ["git", "check-ignore", "-q", "--no-index", path],
+        cwd=root,
+        check=False,
+        capture_output=True,
+    )
+    assert result.returncode == 0, f"{path} is not excluded by .gitignore"
+============================================================================
+END ORIGINAL FILE: tests/test_gitignore.py
+============================================================================
+
+============================================================================
+BEGIN ORIGINAL FILE: tests/test_market_data_spec.py
+GIT BLOB SHA: 2b858ab9ee05ea9249620c7f8aa06ea84c14c454
+PR CHANGED: false
+SOURCE LINES: 162
+============================================================================
+"""Static design-contract checks; NOT tests of any broker adapter.
+
+Only synthetic data and documentary capability candidates are validated here.
+"""
+
+import datetime
+import json
+from decimal import Decimal
+from pathlib import Path
+from zoneinfo import ZoneInfo
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+SPEC = ROOT / "docs" / "specifications"
+FIXTURES = ROOT / "tests" / "fixtures" / "spec"
+
+
+def read_json(path: Path) -> dict:
+    with path.open(encoding="utf-8") as file:
+        return json.load(file)
+
+
+def test_matrix_never_reports_unimplemented_api_as_supported() -> None:
+    matrix = read_json(SPEC / "capability-matrix-v0.1.json")
+
+    assert matrix["review_status"] == "proposed_not_approved"
+    assert matrix["live_tested"] is False
+    assert matrix["schema_version"] == 1
+    assert {broker["id"] for broker in matrix["brokers"]} == {"kis", "kiwoom"}
+    allowed_states = set(matrix["capability_states"])
+    required_methods = {
+        "load_markets",
+        "fetch_ticker",
+        "fetch_ohlcv",
+        "fetch_order_book",
+    }
+    for broker in matrix["brokers"]:
+        assert broker["adapter_implemented"] is False
+        assert (ROOT / broker["evidence_file"]).is_file()
+        capabilities = broker["capabilities"]
+        assert {cap["method"] for cap in capabilities} == required_methods
+        for cap in capabilities:
+            assert cap["state"] in allowed_states
+            assert cap["state"] != "supported"
+            assert cap["implemented"] is False
+            assert cap["normalized_contract_verified"] is False
+            assert cap["real_environment"] == "unverified"
+            assert cap["paper_environment"] == "unverified"
+            assert cap["evidence_url"].startswith("https://")
+            assert cap["requested_venues"] == ["KRX"]
+            assert isinstance(cap["requested_timeframes"], list)
+
+
+def test_synthetic_daily_timestamp_is_anchored_to_kst_session_date() -> None:
+    candle = read_json(FIXTURES / "candle-day-synthetic.json")
+    assert candle["_synthetic"] is True
+    assert candle["venue"] == "KRX"
+    assert candle["session_date"] == "2026-10-28"
+
+    kst_anchor = datetime.datetime.combine(
+        datetime.datetime.fromisoformat(candle["session_date"]).date(),
+        datetime.time.min,
+        tzinfo=ZoneInfo("Asia/Seoul"),
+    )
+    assert candle["timestamp"] == int(kst_anchor.timestamp() * 1000)
+    # KST midnight is 15:00 UTC on the *previous* calendar day.
+    assert datetime.datetime.fromtimestamp(
+        candle["timestamp"] / 1000, tz=datetime.UTC
+    ).date().isoformat() == "2026-10-27"
+
+    for key in ("open", "high", "low", "close"):
+        assert Decimal(candle[key]) > 0
+    assert candle["volume"] >= 0
+
+
+@pytest.mark.parametrize(
+    ("side", "reverse"),
+    [("bids", True), ("asks", False)],
+)
+def test_synthetic_book_levels_follow_documented_price_order(
+    side: str, reverse: bool
+) -> None:
+    book = read_json(FIXTURES / "order-book-synthetic.json")
+    assert book["_synthetic"] is True
+    assert book["timestamp"] is None  # No invented native event timestamp.
+    prices = [Decimal(price) for price, quantity in book[side]]
+    quantities = [quantity for price, quantity in book[side]]
+
+    assert prices == sorted(prices, reverse=reverse)
+    assert all(isinstance(quantity, int) and quantity >= 0 for quantity in quantities)
+    # A genuinely documented zero-size level is distinct from missing data.
+    if side == "bids":
+        assert 0 in quantities
+
+def test_synthetic_model_fixtures_match_spec_required_fields() -> None:
+    """Compare the machine-readable proposal, its Markdown table and fixtures."""
+    import re
+
+    schema = read_json(SPEC / "normalized-models-v0.1.json")
+    assert schema["status"] == "proposed_not_approved"
+    assert schema["conditional_required"]["venue=BROKER_COMPOSITE"] == [
+        "scope_description"
+    ]
+    assert set(schema["models"]) == {"Ticker", "Candle", "OrderBook"}
+    markdown = (SPEC / "market-data-v0.1-draft.md").read_text(encoding="utf-8")
+
+    for model_name, model in schema["models"].items():
+        fixture = read_json(FIXTURES / model["fixture"])
+        assert fixture["_synthetic"] is True
+
+        required, optional = set(model["required"]), set(model["optional"])
+        assert not (required & optional)
+        assert {"symbol", "venue", "broker", "info"} <= required
+        assert "scope_description" in optional
+
+        actual = set(fixture) - {"_synthetic", "_note"}
+        assert required <= actual, f"{model_name} missing: {required - actual}"
+        assert actual <= (required | optional), f"{model_name} unexpected: {actual - required - optional}"
+        assert isinstance(fixture["info"], dict)
+
+        table_row = next(
+            row for row in markdown.splitlines() if row.startswith(f"| {model_name} |")
+        )
+        cells = [cell.strip() for cell in table_row.strip("|").split("|")]
+        assert len(cells) == 3
+        md_required = set(re.findall(r"`([^`]+)`", cells[1]))
+        md_optional = set(re.findall(r"`([^`]+)`", cells[2]))
+        assert required == md_required, f"{model_name} required keys differ from Markdown"
+        assert optional == md_optional, f"{model_name} optional keys differ from Markdown"
+
+
+def test_synthetic_ticker_distinguishes_last_and_previous_close() -> None:
+    ticker = read_json(FIXTURES / "ticker-synthetic.json")
+
+    assert ticker["_synthetic"] is True
+    assert ticker["venue"] == "KRX"
+    assert ticker["timestamp"] is None
+    assert ticker["retrieved_at"] is not None
+    assert ticker["info"] == {}
+    assert Decimal(ticker["last"]) != Decimal(ticker["previous_close"])
+    assert ticker["bid"] is None
+    assert ticker["ask"] is None
+    assert "close" not in ticker
+
+
+def test_synthetic_candle_provenance_is_explicit() -> None:
+    candle = read_json(FIXTURES / "candle-day-synthetic.json")
+    assert candle["info"] == {}
+    assert candle["adjustment"] == "raw"
+    assert candle["session"] == "regular"
+
+
+def test_proposed_history_query_policy_has_finite_scope() -> None:
+    policy = read_json(SPEC / "history-query-v0.1.json")
+    assert policy["status"] == "proposed_not_approved"
+    assert policy["since_requires_until"] is True
+    assert policy["until_exclusive"] is True
+    assert policy["output_order"] == "oldest_first"
+    assert policy["provider_request_budget"] == "finite_per_adapter"
+    assert policy["on_incomplete_range"] == "raise_incomplete_market_data"
+
+============================================================================
+END ORIGINAL FILE: tests/test_market_data_spec.py
+============================================================================
+
+============================================================================
+BEGIN ORIGINAL FILE: tests/test_package.py
+GIT BLOB SHA: f5bc940702786c53239d0521c24320b2b0ef1f8b
+PR CHANGED: false
+SOURCE LINES: 22
+============================================================================
+"""Smoke tests for the installable KTradeLink package."""
+
+import importlib
+from importlib.metadata import version
+
+
+def test_package_imports() -> None:
+    module = importlib.import_module("ktradelink")
+    assert module.__name__ == "ktradelink"
+
+
+def test_distribution_version_matches_package_version() -> None:
+    from ktradelink import __version__
+
+    assert version("ktradelink") == __version__
+
+
+def test_no_unimplemented_brokers_are_exposed() -> None:
+    import ktradelink
+
+    assert not hasattr(ktradelink, "kis")
+    assert not hasattr(ktradelink, "kiwoom")
+============================================================================
+END ORIGINAL FILE: tests/test_package.py
+============================================================================
+
+============================================================================
+BEGIN ORIGINAL FILE: tests/test_ticker_model.py
+GIT BLOB SHA: 8adc0768e1a7f2ac681cb3a64e56c2d216c493b1
+PR CHANGED: true
+SOURCE LINES: 116
+============================================================================
+"""Construction-time contracts for the typed-only, broker-neutral Ticker."""
+
+import json
+from dataclasses import FrozenInstanceError
+from decimal import Decimal
+from pathlib import Path
+
+import pytest
+
+from ktradelink.models import Ticker
+
+
+def example_ticker(**overrides: object) -> Ticker:
+    kwargs = {
+        "symbol": "005930",
+        "venue": "KRX",
+        "broker": "kis",
+        "last": Decimal("70500"),
+        "previous_close": Decimal("70000"),
+        "volume": 0,
+        "info": {"source_api_id": "example"},
+    }
+    kwargs.update(overrides)
+    return Ticker(**kwargs)
+
+
+def test_fixture_builds_typed_ticker_with_nullable_bid_and_ask() -> None:
+    path = Path(__file__).parent / "fixtures" / "spec" / "ticker-synthetic.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["_synthetic"] is True
+    ticker = Ticker(
+        symbol=data["symbol"],
+        venue=data["venue"],
+        broker=data["broker"],
+        last=Decimal(data["last"]),
+        previous_close=Decimal(data["previous_close"]),
+        bid=data["bid"],
+        ask=data["ask"],
+        info=data["info"],
+    )
+    assert ticker.last == Decimal("70500")
+    assert ticker.previous_close == Decimal("70000")
+    assert ticker.bid is None and ticker.ask is None
+    assert ticker.symbol == "005930"
+    assert not hasattr(ticker, "to_dict")
+    assert not hasattr(ticker, "to_json")
+    assert not hasattr(ticker, "close")
+
+
+def test_frozen_model_and_independent_info_snapshot() -> None:
+    native = {"source_api_id": "ka10001"}
+    ticker = example_ticker(info=native)
+    native["source_api_id"] = "mutated"
+    assert ticker.info["source_api_id"] == "ka10001"
+    with pytest.raises(TypeError):
+        ticker.info["source_api_id"] = "not allowed"
+    with pytest.raises(FrozenInstanceError):
+        ticker.last = Decimal("10")
+    assert not hasattr(ticker, "__dict__")
+
+
+@pytest.mark.parametrize(
+    "bad",
+    ["70500", 70500, 70500.0, Decimal("NaN"), Decimal("Infinity"), Decimal("-1")],
+)
+def test_reject_unparsed_or_invalid_prices(bad: object) -> None:
+    with pytest.raises(ValueError):
+        example_ticker(last=bad)
+
+
+@pytest.mark.parametrize("bad", [True, 1.5, -1, "42"])
+def test_reject_invalid_volume(bad: object) -> None:
+    with pytest.raises(ValueError):
+        example_ticker(volume=bad)
+
+
+def test_zero_price_and_missing_price_are_distinct() -> None:
+    assert example_ticker(last=Decimal(0)).last == Decimal(0)
+    assert example_ticker(last=None).last is None
+
+
+@pytest.mark.parametrize("bad", [True, "123", -1])
+def test_reject_invalid_timestamps(bad: object) -> None:
+    with pytest.raises(ValueError):
+        example_ticker(timestamp=bad)
+
+
+def test_non_numeric_korean_symbol_is_not_rejected_by_value_model() -> None:
+    assert example_ticker(symbol="0101N0").symbol == "0101N0"
+    assert example_ticker(symbol="005930").symbol == "005930"
+
+
+@pytest.mark.parametrize("value", ["", " 005930", 123456])
+def test_invalid_symbol(value: object) -> None:
+    with pytest.raises(ValueError):
+        example_ticker(symbol=value)
+
+
+def test_composite_scope_required() -> None:
+    with pytest.raises(ValueError):
+        example_ticker(venue="BROKER_COMPOSITE")
+    ticker = example_ticker(
+        venue="BROKER_COMPOSITE", scope_description="broker-defined quote aggregation"
+    )
+    assert ticker.scope_description == "broker-defined quote aggregation"
+    with pytest.raises(ValueError):
+        example_ticker(venue="NONEXISTENT")
+
+
+@pytest.mark.parametrize(
+    "info",
+    [{"access_token": "secret"}, {"account_id": "123"}, {"nested": {"value": 1}}],
+)
+def test_sensitive_or_mutable_info_is_rejected(info: object) -> None:
+    with pytest.raises((TypeError, ValueError)):
+        example_ticker(info=info)
+============================================================================
+END ORIGINAL FILE: tests/test_ticker_model.py
+============================================================================
+
+END OF FULL PR7 SOURCE SNAPSHOT
