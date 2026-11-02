@@ -1,4 +1,4 @@
-KTRADELINK PR #11 — FULL REVIEW SOURCE TEXT (ASSEMBLY IN PROGRESS)
+KTRADELINK PR #11 — COMPLETE ORIGINAL SOURCE REVIEW TEXT
 ========================================================================
 Repository: https://github.com/kisbi3/ktradelink
 PR: https://github.com/kisbi3/ktradelink/pull/11
@@ -14,7 +14,7 @@ Python public typed Ticker API stays unchanged. Rust is an optional probe.
 Measured results from GitHub Actions #41394580369, described in the docs.
 p95 reported is variation across 2,000-item iterations, NOT single-event p95.
 Do not infer end-to-end brokerage speedup or approve production migration.
-Assembly: INCOMPLETE, other source files will be appended.
+Assembly: COMPLETE — all selected 19 original files included.
 
 
 ========================================================================
@@ -615,3 +615,779 @@ module-name = "ktl_rust_parse_probe"
 ========================================================================
 END ORIGINAL FILE: experiments/rust-parse/pyproject.toml
 ========================================================================
+
+========================================================================
+BEGIN ORIGINAL FILE: experiments/rust-parse/reference.py
+BLOB SHA: d64a181ba3ab64aa346da8cf97ee9b0822afa5a9
+PR CHANGED: true
+SOURCE LINES: 88
+========================================================================
+"""Python reference for a deliberately synthetic, broker-neutral quote payload.
+
+This experiment is NOT a KIS/Kiwoom/LS/DB/Toss/Meritz response parser.
+"""
+
+import json
+from decimal import Decimal
+
+from ktradelink.models import Ticker
+
+_PRICE_FIELDS = ("last", "open", "high", "low", "previous_close")
+_INT_FIELDS = ("volume", "timestamp", "retrieved_at")
+_KEYS = frozenset(("symbol", "venue", *_PRICE_FIELDS, *_INT_FIELDS))
+
+# Tuple order matches the experimental Rust FFI return type, not a public API.
+RawRow = tuple[
+    str, str, str | None, str | None, str | None, str | None, str | None,
+    int | None, int | None, int | None,
+]
+
+
+def _unique_pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    record: dict[str, object] = {}
+    for key, value in pairs:
+        if key in record:
+            raise ValueError("duplicate JSON key")
+        record[key] = value
+    return record
+
+
+def _non_json_constant(value: str) -> None:
+    raise ValueError(f"non-JSON number {value}")
+
+
+def python_parse_one(payload: str) -> RawRow:
+    """Validate JSON shape and types without invoking the Ticker constructor."""
+    record = json.loads(
+        payload, object_pairs_hook=_unique_pairs, parse_constant=_non_json_constant
+    )
+    if not isinstance(record, dict) or not {"symbol", "venue"} <= record.keys():
+        raise ValueError("synthetic JSON must be an object with symbol and venue")
+    if not record.keys() <= _KEYS:
+        raise ValueError("unknown synthetic quote fields")
+    for key in ("symbol", "venue"):
+        if not isinstance(record[key], str):
+            raise ValueError(f"{key} must be a string")
+    for key in _PRICE_FIELDS:
+        value = record.get(key)
+        if value is not None and not isinstance(value, str):
+            raise ValueError(f"{key} must be a price string or null")
+    for key in _INT_FIELDS:
+        value = record.get(key)
+        if value is not None and (
+            isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 2**64 - 1
+        ):
+            raise ValueError(f"{key} must be a nonnegative 64-bit integer or null")
+    return (
+        record["symbol"], record["venue"],
+        *(record.get(key) for key in _PRICE_FIELDS),
+        *(record.get(key) for key in _INT_FIELDS),
+    )
+
+
+def python_parse_batch(payloads: list[str]) -> list[RawRow]:
+    return [python_parse_one(payload) for payload in payloads]
+
+
+def row_to_ticker(row: RawRow) -> Ticker:
+    """Build the exact existing public typed model, for either parsing backend."""
+    symbol, venue, last, open_, high, low, previous_close, volume, timestamp, received = row
+
+    def price(value: str | None) -> Decimal | None:
+        return None if value is None else Decimal(value)
+
+    return Ticker(
+        symbol=symbol,
+        venue=venue,
+        broker="synthetic",
+        last=price(last),
+        open=price(open_),
+        high=price(high),
+        low=price(low),
+        previous_close=price(previous_close),
+        volume=volume,
+        timestamp=timestamp,
+        retrieved_at=received,
+        info={},
+    )
+========================================================================
+END ORIGINAL FILE: experiments/rust-parse/reference.py
+========================================================================
+
+========================================================================
+BEGIN ORIGINAL FILE: experiments/rust-parse/src/lib.rs
+BLOB SHA: c918936ccb0b29045d008c27ed1cc7af38dc4e91
+PR CHANGED: true
+SOURCE LINES: 60
+========================================================================
+//! Isolated synthetic JSON parsing probe: not a provider adapter or stable SDK.
+
+use pyo3::exceptions::PyValueError;
+use pyo3::prelude::*;
+use serde::Deserialize;
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SyntheticQuote {
+    symbol: String,
+    venue: String,
+    last: Option<String>,
+    open: Option<String>,
+    high: Option<String>,
+    low: Option<String>,
+    previous_close: Option<String>,
+    volume: Option<u64>,
+    timestamp: Option<u64>,
+    retrieved_at: Option<u64>,
+}
+
+// Experimental FFI value: a tuple in known field order, not a public return type.
+type RawRow = (
+    String, String, Option<String>, Option<String>, Option<String>, Option<String>,
+    Option<String>, Option<u64>, Option<u64>, Option<u64>,
+);
+
+fn decode(payload: &str) -> PyResult<RawRow> {
+    let q: SyntheticQuote = serde_json::from_str(payload)
+        .map_err(|err| PyValueError::new_err(format!("invalid synthetic quote JSON: {err}")))?;
+    Ok((
+        q.symbol,
+        q.venue,
+        q.last,
+        q.open,
+        q.high,
+        q.low,
+        q.previous_close,
+        q.volume,
+        q.timestamp,
+        q.retrieved_at,
+    ))
+}
+
+#[pyfunction]
+fn parse_one_json(payload: &str) -> PyResult<RawRow> {
+    decode(payload)
+}
+
+#[pyfunction]
+fn parse_batch_json(payloads: Vec<String>) -> PyResult<Vec<RawRow>> {
+    payloads.iter().map(|payload| decode(payload)).collect()
+}
+
+#[pymodule]
+fn ktl_rust_parse_probe(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    module.add_function(wrap_pyfunction!(parse_one_json, module)?)?;
+    module.add_function(wrap_pyfunction!(parse_batch_json, module)?)?;
+    Ok(())
+}
+========================================================================
+END ORIGINAL FILE: experiments/rust-parse/src/lib.rs
+========================================================================
+
+========================================================================
+BEGIN ORIGINAL FILE: experiments/rust-parse/tests/test_equivalence.py
+BLOB SHA: b1af9ae6443d4f2669abbd5e95813d634dc680f0
+PR CHANGED: true
+SOURCE LINES: 62
+========================================================================
+"""End-to-end equality when the opt-in native extension is installed."""
+
+import json
+import sys
+from pathlib import Path
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+import ktl_rust_parse_probe as rust_probe  # noqa: E402
+from data import generate_payloads  # noqa: E402
+from reference import python_parse_batch, python_parse_one, row_to_ticker  # noqa: E402
+
+
+@pytest.mark.parametrize("count", [1, 2, 17, 257])
+def test_raw_and_public_typed_results_equal_for_batch(count: int) -> None:
+    payloads = generate_payloads(count)
+    rust = rust_probe.parse_batch_json(payloads)
+    python = python_parse_batch(payloads)
+    assert rust == python
+    assert [row_to_ticker(row) for row in rust] == [row_to_ticker(row) for row in python]
+    assert rust_probe.parse_one_json(payloads[0]) == python_parse_one(payloads[0])
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "[]",
+        "{}",
+        '{"symbol":"005930","venue":"KRX","unknown":1}',
+        '{"symbol":"005930","venue":"KRX","last":70500}',
+        '{"symbol":"005930","venue":"KRX","volume":true}',
+        '{"symbol":"005930","venue":"KRX","timestamp":-1}',
+        '{"symbol":123,"venue":"KRX"}',
+        '{"symbol":"005930","venue":"KRX","last":null,"last":"1"}',
+        '{"symbol":"005930","venue":"KRX","volume":NaN}',
+    ],
+)
+def test_both_parsers_reject_malformed_wire_types(message: str) -> None:
+    with pytest.raises(ValueError):
+        python_parse_one(message)
+    with pytest.raises(ValueError):
+        rust_probe.parse_one_json(message)
+
+
+@pytest.mark.parametrize("value", ["-1", "-0", "NaN", "Infinity"])
+def test_both_reject_unsafe_price_when_constructing_typed_model(value: str) -> None:
+    message = json.dumps({"symbol": "005930", "venue": "KRX", "last": value})
+    for raw in (python_parse_one(message), rust_probe.parse_one_json(message)):
+        with pytest.raises(ValueError):
+            row_to_ticker(raw)
+
+
+def test_null_and_missing_fields_have_same_typed_semantics() -> None:
+    for message in (
+        '{"symbol":"005930","venue":"KRX"}',
+        '{"symbol":"005930","venue":"KRX","last":null,"volume":0}',
+    ):
+        assert row_to_ticker(python_parse_one(message)) == row_to_ticker(
+            rust_probe.parse_one_json(message)
+        )
+========================================================================
+END ORIGINAL FILE: experiments/rust-parse/tests/test_equivalence.py
+========================================================================
+
+========================================================================
+BEGIN ORIGINAL FILE: experiments/rust-parse/tests/test_reference.py
+BLOB SHA: af3bbc780f6411a7a588c287a7bd79e734b6e7d4
+PR CHANGED: true
+SOURCE LINES: 52
+========================================================================
+"""Pure-Python experimental reference tests (work without Rust extension)."""
+
+import json
+import sys
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from data import generate_payloads  # noqa: E402
+from reference import python_parse_batch, python_parse_one, row_to_ticker  # noqa: E402
+
+
+def test_reference_round_trip_to_real_typed_ticker() -> None:
+    payloads = generate_payloads(23)
+    result = [row_to_ticker(row) for row in python_parse_batch(payloads)]
+    assert len(result) == 23
+    assert result[0].last is not None
+    assert result[0].info == {}
+    assert result[1].symbol == "0101N0"
+    assert result[2].timestamp is not None
+    assert result[0].timestamp is None
+    assert not hasattr(result[0], "to_dict")
+    assert row_to_ticker(python_parse_one(payloads[0])) == result[0]
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "[]",
+        "{}",
+        '{"symbol":"005930","venue":"KRX","unknown":1}',
+        '{"symbol":"005930","venue":"KRX","last":70500}',
+        '{"symbol":"005930","venue":"KRX","volume":true}',
+        '{"symbol":"005930","venue":"KRX","timestamp":-1}',
+        '{"symbol":123,"venue":"KRX"}',
+        '{"symbol":"005930","venue":"KRX","last":null,"last":"1"}',
+        '{"symbol":"005930","venue":"KRX","volume":NaN}',
+    ],
+)
+def test_reference_rejects_malformed_synthetic_schema(message: str) -> None:
+    with pytest.raises(ValueError):
+        python_parse_one(message)
+
+
+def test_native_value_model_rejects_signed_and_nonfinite_prices() -> None:
+    for invalid in ["-0", "-10", "NaN", "Infinity"]:
+        raw = json.dumps({"symbol": "005930", "venue": "KRX", "last": invalid})
+        with pytest.raises(ValueError):
+            row_to_ticker(python_parse_one(raw))
+========================================================================
+END ORIGINAL FILE: experiments/rust-parse/tests/test_reference.py
+========================================================================
+
+========================================================================
+BEGIN ORIGINAL FILE: pyproject.toml
+BLOB SHA: 953a2bd6cfb3806220667623751f9edb45332517
+PR CHANGED: false
+SOURCE LINES: 47
+========================================================================
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ktradelink"
+version = "0.0.0.dev0"
+description = "A unified Python interface for Korean securities brokers"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+keywords = ["trading", "broker", "korea", "api", "finance"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Office/Business :: Financial :: Investment",
+]
+dependencies = ["tzdata>=2024.1"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.8"]
+
+[project.urls]
+Homepage = "https://github.com/kisbi3/ktradelink"
+Repository = "https://github.com/kisbi3/ktradelink"
+Issues = "https://github.com/kisbi3/ktradelink/issues"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "B", "UP"]
+========================================================================
+END ORIGINAL FILE: pyproject.toml
+========================================================================
+
+========================================================================
+BEGIN ORIGINAL FILE: src/ktradelink/models/__init__.py
+BLOB SHA: 92dfb3c55fc2a881a9095a598a7ac34271aaf821
+PR CHANGED: false
+SOURCE LINES: 7
+========================================================================
+"""Typed market-data values. Broker adapters are not implemented yet."""
+
+from ktradelink.models.candle import Candle
+from ktradelink.models.order_book import OrderBook, OrderBookLevel
+from ktradelink.models.ticker import Ticker
+
+__all__ = ["Candle", "OrderBook", "OrderBookLevel", "Ticker"]
+========================================================================
+END ORIGINAL FILE: src/ktradelink/models/__init__.py
+========================================================================
+
+========================================================================
+BEGIN ORIGINAL FILE: src/ktradelink/models/_validation.py
+BLOB SHA: 6ab7e0ea89a49cc2a3b4980b81a384606009dff2
+PR CHANGED: false
+SOURCE LINES: 80
+========================================================================
+"""Private value validation shared by market-data models; no native parsing."""
+
+import re
+from collections.abc import Mapping
+from decimal import Decimal
+from types import MappingProxyType
+
+InfoScalar = str | int | bool | Decimal | None
+_SENSITIVE_KEY_FRAGMENTS = (
+    "token", "secret", "password", "account", "authorization",
+    "credential", "cookie", "apikey", "appkey", "acnt", "acct", "seckey",
+)
+_VENUES = frozenset({"KRX", "NXT", "BROKER_COMPOSITE"})
+
+
+def validate_provenance(
+    symbol: str, venue: str, broker: str, scope_description: str | None
+) -> None:
+    """Retain Ticker's identifier and composite-source rules."""
+    for name, value in (("symbol", symbol), ("broker", broker)):
+        if (
+            not isinstance(value, str)
+            or not value
+            or value != value.strip()
+            or any(char.isspace() or not char.isprintable() for char in value)
+        ):
+            raise ValueError(f"{name} must be a printable string without whitespace")
+    if not isinstance(venue, str) or venue not in _VENUES:
+        raise ValueError(f"venue must be one of {sorted(_VENUES)!r}")
+    if venue == "BROKER_COMPOSITE" and (
+        not isinstance(scope_description, str) or not scope_description.strip()
+    ):
+        raise ValueError("composite quote requires scope_description")
+    if scope_description is not None and (
+        not isinstance(scope_description, str)
+        or scope_description != scope_description.strip()
+        or not scope_description
+        or any(not char.isprintable() for char in scope_description)
+    ):
+        raise ValueError("scope_description must be printable and trimmed")
+
+
+def validate_price(name: str, value: object, *, nullable: bool = True) -> None:
+    """Do not normalize a broker's sign or create a Decimal from a float."""
+    if value is None and nullable:
+        return
+    if not isinstance(value, Decimal) or not value.is_finite() or value.is_signed():
+        suffix = " or None" if nullable else ""
+        raise ValueError(f"{name} must be an unsigned finite Decimal{suffix}")
+
+
+def validate_integer(name: str, value: object, *, nullable: bool = True) -> None:
+    if value is None and nullable:
+        return
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        suffix = " or None" if nullable else ""
+        raise ValueError(f"{name} must be a nonnegative integer{suffix}")
+
+
+def freeze_info(info: Mapping[str, InfoScalar]) -> Mapping[str, InfoScalar]:
+    """Copy flat scalar metadata; denylist is NOT a provider allowlist/redactor."""
+    if not isinstance(info, Mapping):
+        raise TypeError("info must be a mapping of safe scalar metadata")
+    snapshot: dict[str, InfoScalar] = {}
+    for key, value in info.items():
+        if not isinstance(key, str):
+            raise TypeError("info keys must be strings")
+        normalized_key = "".join(char for char in key.casefold() if char.isalnum())
+        key_parts = re.split(r"[^a-z0-9]+", key.casefold())
+        if (
+            any(term in normalized_key for term in _SENSITIVE_KEY_FRAGMENTS)
+            or "cano" in key_parts
+        ):
+            raise ValueError("info must not contain authentication/account fields")
+        if not (value is None or isinstance(value, (str, int, bool, Decimal))):
+            raise TypeError("info values must be immutable scalar metadata")
+        if isinstance(value, Decimal) and not value.is_finite():
+            raise ValueError("info decimals must be finite")
+        snapshot[key] = value
+    return MappingProxyType(snapshot)
+========================================================================
+END ORIGINAL FILE: src/ktradelink/models/_validation.py
+========================================================================
+
+========================================================================
+BEGIN ORIGINAL FILE: src/ktradelink/models/ticker.py
+BLOB SHA: 8a400b2fabc7e02797cb3579195fade9d0f05178
+PR CHANGED: false
+SOURCE LINES: 78
+========================================================================
+"""Broker-neutral, typed current-quote value model.
+
+This is a value type only: no broker calls, parsing, or credential handling.
+"""
+
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from decimal import Decimal
+
+from ktradelink.models._validation import (
+    InfoScalar,
+    freeze_info,
+    validate_integer,
+    validate_price,
+    validate_provenance,
+)
+
+_PRICES = ("last", "open", "high", "low", "previous_close", "bid", "ask")
+_TIMESTAMPS = ("timestamp", "retrieved_at")
+
+
+@dataclass(frozen=True, slots=True)
+class Ticker:
+    """Normalized quote metadata with an explicit source and nullable prices.
+
+    Prices must already be normalized to Decimal by a broker-specific decoder.
+    This constructor never guesses a broker-native field's sign or timestamp.
+    The object intentionally has no public dictionary/JSON conversion method.
+    """
+
+    symbol: str
+    venue: str
+    broker: str
+    last: Decimal | None
+    info: Mapping[str, InfoScalar] = field(default_factory=dict, repr=False)
+    timestamp: int | None = None
+    retrieved_at: int | None = None
+    open: Decimal | None = None
+    high: Decimal | None = None
+    low: Decimal | None = None
+    previous_close: Decimal | None = None
+    volume: int | None = None
+    bid: Decimal | None = None
+    ask: Decimal | None = None
+    scope_description: str | None = None
+
+    def __post_init__(self) -> None:
+        validate_provenance(self.symbol, self.venue, self.broker, self.scope_description)
+        for name in _PRICES:
+            validate_price(name, getattr(self, name))
+        for name in (*_TIMESTAMPS, "volume"):
+            validate_integer(name, getattr(self, name))
+        object.__setattr__(self, "info", freeze_info(self.info))
+
+    def __hash__(self) -> int:
+        """Hash all equality fields, including sanitized scalar metadata.
+
+        A MappingProxyType is immutable but not hashable. Its contents are
+        deliberately restricted to hashable scalars during construction.
+        Sorting items makes the hash independent of source mapping order.
+        """
+        return hash((
+            self.symbol,
+            self.venue,
+            self.broker,
+            self.last,
+            tuple(sorted(self.info.items())),
+            self.timestamp,
+            self.retrieved_at,
+            self.open,
+            self.high,
+            self.low,
+            self.previous_close,
+            self.volume,
+            self.bid,
+            self.ask,
+            self.scope_description,
+        ))
+========================================================================
+END ORIGINAL FILE: src/ktradelink/models/ticker.py
+========================================================================
+
+========================================================================
+BEGIN ORIGINAL FILE: tests/test_ticker_model.py
+BLOB SHA: 42d8a409ddbe52ee2f255bb1a024d7294c3391d9
+PR CHANGED: false
+SOURCE LINES: 210
+========================================================================
+"""Construction-time contracts for the typed-only, broker-neutral Ticker."""
+
+import json
+from dataclasses import FrozenInstanceError
+from decimal import Decimal
+from pathlib import Path
+
+import pytest
+
+from ktradelink.models import Ticker
+
+
+def example_ticker(**overrides: object) -> Ticker:
+    kwargs = {
+        "symbol": "005930",
+        "venue": "KRX",
+        "broker": "kis",
+        "last": Decimal("70500"),
+        "previous_close": Decimal("70000"),
+        "volume": 0,
+        "info": {"source_api_id": "example"},
+    }
+    kwargs.update(overrides)
+    return Ticker(**kwargs)
+
+
+def test_fixture_builds_typed_ticker_with_nullable_bid_and_ask() -> None:
+    path = Path(__file__).parent / "fixtures" / "spec" / "ticker-synthetic.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["_synthetic"] is True
+
+    # Pass EVERY normalized fixture field, not only the required core fields.
+    native_fields = {key: value for key, value in data.items() if not key.startswith("_")}
+    price_fields = {"last", "open", "high", "low", "previous_close", "bid", "ask"}
+    normalized_fields = {
+        key: Decimal(value) if key in price_fields and value is not None else value
+        for key, value in native_fields.items()
+    }
+    ticker = Ticker(**normalized_fields)
+
+    for name, expected in normalized_fields.items():
+        assert getattr(ticker, name) == expected, f"Fixture field mismatch: {name}"
+
+    assert ticker.last == Decimal("70500")
+    assert ticker.previous_close == Decimal("70000")
+    assert ticker.open == Decimal("70100")
+    assert ticker.high == Decimal("70800")
+    assert ticker.low == Decimal("69900")
+    assert ticker.volume == 1500
+    assert ticker.timestamp is None
+    assert ticker.retrieved_at == 1793113200000
+    assert ticker.bid is None and ticker.ask is None
+    assert ticker.symbol == "005930"
+    assert not hasattr(ticker, "to_dict")
+    assert not hasattr(ticker, "to_json")
+    assert not hasattr(ticker, "close")
+
+
+def test_frozen_model_and_independent_info_snapshot() -> None:
+    native = {"source_api_id": "ka10001"}
+    ticker = example_ticker(info=native)
+    native["source_api_id"] = "mutated"
+    assert ticker.info["source_api_id"] == "ka10001"
+    with pytest.raises(TypeError):
+        ticker.info["source_api_id"] = "not allowed"
+    with pytest.raises(FrozenInstanceError):
+        ticker.last = Decimal("10")
+    assert not hasattr(ticker, "__dict__")
+
+
+@pytest.mark.parametrize(
+    "bad",
+    ["70500", 70500, 70500.0, Decimal("NaN"), Decimal("Infinity"), Decimal("-1")],
+)
+def test_reject_unparsed_or_invalid_prices(bad: object) -> None:
+    with pytest.raises(ValueError):
+        example_ticker(last=bad)
+
+
+@pytest.mark.parametrize("bad", [True, 1.5, -1, "42"])
+def test_reject_invalid_volume(bad: object) -> None:
+    with pytest.raises(ValueError):
+        example_ticker(volume=bad)
+
+
+def test_zero_price_and_missing_price_are_distinct() -> None:
+    assert example_ticker(last=Decimal(0)).last == Decimal(0)
+    assert example_ticker(last=None).last is None
+
+
+@pytest.mark.parametrize("bad", [True, "123", -1])
+def test_reject_invalid_timestamps(bad: object) -> None:
+    with pytest.raises(ValueError):
+        example_ticker(timestamp=bad)
+
+
+def test_non_numeric_korean_symbol_is_not_rejected_by_value_model() -> None:
+    assert example_ticker(symbol="0101N0").symbol == "0101N0"
+    assert example_ticker(symbol="005930").symbol == "005930"
+
+
+@pytest.mark.parametrize("value", ["", " 005930", 123456])
+def test_invalid_symbol(value: object) -> None:
+    with pytest.raises(ValueError):
+        example_ticker(symbol=value)
+
+
+def test_composite_scope_required() -> None:
+    with pytest.raises(ValueError):
+        example_ticker(venue="BROKER_COMPOSITE")
+    ticker = example_ticker(
+        venue="BROKER_COMPOSITE", scope_description="broker-defined quote aggregation"
+    )
+    assert ticker.scope_description == "broker-defined quote aggregation"
+    with pytest.raises(ValueError):
+        example_ticker(venue="NONEXISTENT")
+
+
+@pytest.mark.parametrize(
+    "info",
+    [{"access_token": "secret"}, {"account_id": "123"}, {"nested": {"value": 1}}],
+)
+def test_sensitive_or_mutable_info_is_rejected(info: object) -> None:
+    with pytest.raises((TypeError, ValueError)):
+        example_ticker(info=info)
+
+
+def test_equal_tickers_with_metadata_are_hashable() -> None:
+    left = example_ticker(info={"source_api_id": "ka10001", "source": "test"})
+    right = example_ticker(info={"source": "test", "source_api_id": "ka10001"})
+    assert left == right
+    assert hash(left) == hash(right)
+    assert {left, right} == {left}
+    assert {left: "price"}[right] == "price"
+
+
+def test_hash_includes_metadata_value_semantics() -> None:
+    left = example_ticker(info={"source_api_id": "ka10001"})
+    right = example_ticker(info={"source_api_id": "FHKST01010100"})
+    assert left != right
+    assert hash(left) == hash(left)  # Stable within a process.
+    assert {left: "kiwoom", right: "kis"}[right] == "kis"
+
+
+@pytest.mark.parametrize(
+    "field_name",
+    [
+        "app-key",
+        "app_key",
+        "AppKey",
+        "api-key",
+        "api_key",
+        "apiKey",
+        "CANO",
+        "cust-CANO",
+        "acnt_no",
+        "ACNT_PRDT_CD",
+        "acct_no",
+        "personalseckey",
+        "PERSONALSECKEY",
+        "refresh_token",
+    ],
+)
+def test_broker_specific_credential_metadata_names_are_rejected(field_name: str) -> None:
+    with pytest.raises(ValueError, match="authentication/account"):
+        example_ticker(info={field_name: "redacted-for-test"})
+
+
+def test_benign_metadata_keys_are_not_blocked_by_short_cano_name() -> None:
+    ticker = example_ticker(
+        info={"source_api_id": "FHKST01010100", "canonical_symbol": "005930"}
+    )
+    assert ticker.info["canonical_symbol"] == "005930"
+
+
+@pytest.mark.parametrize(
+    "price_field",
+    ["last", "open", "high", "low", "previous_close", "bid", "ask"],
+)
+def test_signed_negative_zero_is_rejected_for_all_prices(price_field: str) -> None:
+    with pytest.raises(ValueError, match="unsigned finite Decimal"):
+        example_ticker(**{price_field: Decimal("-0")})
+
+
+@pytest.mark.parametrize(
+    "field_name,invalid",
+    [
+        ("symbol", "005 930"),
+        ("symbol", "005930\n000660"),
+        ("symbol", "005930\t"),
+        ("symbol", "\u200b005930"),
+        ("broker", "kiwoom\nreal"),
+        ("broker", "kis test"),
+        ("broker", "kis\x00"),
+    ],
+)
+def test_symbol_and_broker_reject_internal_whitespace_and_controls(
+    field_name: str, invalid: str
+) -> None:
+    with pytest.raises(ValueError, match="printable string"):
+        example_ticker(**{field_name: invalid})
+
+
+def test_scope_description_rejects_embedded_control_characters() -> None:
+    with pytest.raises(ValueError):
+        example_ticker(
+            venue="BROKER_COMPOSITE",
+            scope_description="multi-market\narbitrary",
+        )
+
+========================================================================
+END ORIGINAL FILE: tests/test_ticker_model.py
+========================================================================
+
+END OF COMPLETE PR #11 REVIEW SOURCE SNAPSHOT
