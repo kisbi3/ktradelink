@@ -1,11 +1,37 @@
 name: Six-broker Rust offline decoder verification
 
 on:
-  pull_request:
+  push:
     paths:
+      - "crates/ktradelink-core/**"
       - "crates/ktradelink-decoders/**"
+      - "bindings/python/**"
+      - "src/ktradelink/_native.py"
+      - "tests/test_six_broker_loader.py"
+      - "rust-toolchain.toml"
       - "Cargo.toml"
       - "Cargo.lock"
+      - "docs/decisions/0006*"
+      - "docs/usage/offline-six-broker*"
+      - "docs/brokers/six-broker-ticker-decoders.md"
+      - "docs/brokers/six-broker-common-surface.md"
+      - "docs/brokers/README.md"
+      - ".github/workflows/six-broker-decoders.yml"
+  pull_request:
+    paths:
+      - "crates/ktradelink-core/**"
+      - "crates/ktradelink-decoders/**"
+      - "bindings/python/**"
+      - "src/ktradelink/_native.py"
+      - "tests/test_six_broker_loader.py"
+      - "rust-toolchain.toml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "docs/decisions/0006*"
+      - "docs/usage/offline-six-broker*"
+      - "docs/brokers/six-broker-ticker-decoders.md"
+      - "docs/brokers/six-broker-common-surface.md"
+      - "docs/brokers/README.md"
       - ".github/workflows/six-broker-decoders.yml"
   workflow_dispatch:
 
