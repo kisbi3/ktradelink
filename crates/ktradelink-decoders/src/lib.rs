@@ -194,15 +194,25 @@ fn volume(record: &Map<String, Value>, key: &'static str) -> Result<Option<u64>,
     Ok(Some(value))
 }
 
+// Status success code TYPES are native to each provider. In particular,
+// Kiwoom's integer 0 cannot become KIS's string "0" accidentally.
+#[derive(Debug, Clone, Copy)]
+enum StatusSpec {
+    ExactText(&'static str),
+    IntegerZero,
+}
+
 fn status(
     record: &Map<String, Value>,
     key: &'static str,
-    allowed: &[&str],
+    accepted: StatusSpec,
 ) -> Result<(), DecodeError> {
-    match record.get(key) {
-        None => Ok(()), // Optional in documented sample; request layer MUST inspect statuses.
-        Some(Value::String(value)) if allowed.contains(&value.as_str()) => Ok(()),
-        Some(Value::Number(n)) if n.as_u64() == Some(0) && allowed.contains(&"0") => Ok(()),
+    match (record.get(key), accepted) {
+        (None, _) => Ok(()), // Optional in example, not authorization to ignore HTTP errors.
+        (Some(Value::String(value)), StatusSpec::ExactText(expected))
+            if value == expected => Ok(()),
+        (Some(Value::Number(n)), StatusSpec::IntegerZero)
+            if n.as_u64() == Some(0) => Ok(()),
         _ => Err(error(key, DecodeKind::SourceStatus)),
     }
 }
@@ -271,6 +281,11 @@ pub fn decode_ticker_candidate(
     if venue != Venue::Krx {
         return Err(error("venue", DecodeKind::UnsupportedVenue));
     }
+    // Reject invalid caller context before any JSON parsing or symbol lookup.
+    // Mirror ktradelink-core's ASCII-graphic identifier contract.
+    if symbol.is_empty() || !symbol.bytes().all(|b| b.is_ascii_graphic()) {
+        return Err(error("symbol", DecodeKind::CoreValidation));
+    }
     if payload.len() > MAX_JSON_BYTES {
         return Err(error("payload", DecodeKind::OversizedInput));
     }
@@ -282,7 +297,7 @@ pub fn decode_ticker_candidate(
 
     match broker {
         Broker::Kis => {
-            status(root, "rt_cd", &["0"])?;
+            status(root, "rt_cd", StatusSpec::ExactText("0"))?;
             let row = child_object(root, "output")?;
             prices.last = price(row, "stck_prpr", true, false)?;
             prices.open = price(row, "stck_oprc", false, false)?;
@@ -291,7 +306,7 @@ pub fn decode_ticker_candidate(
             qty = volume(row, "acml_vol")?;
         }
         Broker::Kiwoom => {
-            status(root, "return_code", &["0"])?;
+            status(root, "return_code", StatusSpec::IntegerZero)?;
             matching_identifier(root, "stk_cd", symbol)?;
             // DO NOT abs() signed Kiwoom price strings until source rules are verified.
             prices.last = price(root, "cur_prc", true, false)?;
@@ -306,7 +321,7 @@ pub fn decode_ticker_candidate(
             prices.last = price(root, "price", true, true)?;
         }
         Broker::Db => {
-            status(root, "rsp_cd", &["00000"])?;
+            status(root, "rsp_cd", StatusSpec::ExactText("00000"))?;
             let row = child_object(root, "Out")?;
             prices.last = price(row, "Prpr", true, false)?;
             prices.open = price(row, "Oprc", false, false)?;
@@ -321,7 +336,10 @@ pub fn decode_ticker_candidate(
             // PriceResponse has no volume or OHLC.
         }
         Broker::Meritz => {
-            status(root, "rsp_cd", &["0000", "0001", "5762", "5766", "5820", "5822"])?;
+            // General Meritz success codes belong to DIFFERENT endpoint families.
+            // 0001 is an order ACK, 5762 is order history continuation, etc.
+            // Only the conservative quote-shaped 0000 candidate is accepted.
+            status(root, "rsp_cd", StatusSpec::ExactText("0000"))?;
             let row = child_object(root, "data")?;
             prices.last = price(row, "stck_prpr", true, false)?;
             prices.open = price(row, "oprc", false, false)?;

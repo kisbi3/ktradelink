@@ -162,3 +162,44 @@ fn inputs_have_no_timestamp_inference_even_if_payload_has_one() {
     assert_eq!(quote.input().timestamp, None);
     assert_eq!(quote.input().retrieved_at, None);
 }
+
+#[test]
+fn caller_symbol_validation_precedes_json_parsing_in_every_broker() {
+    // Deliberately invalid JSON proves identifier validation wins before parsing.
+    for broker in Broker::ALL {
+        for bad in ["", "005 930", "종목", "005930\n", "\u{200b}005930"] {
+            let err = decode(broker, bad, Venue::Krx, "not-valid-json").unwrap_err();
+            assert_eq!(err.field, "symbol");
+            assert_eq!(err.kind, DecodeKind::CoreValidation);
+            assert!(!err.to_string().contains(bad));
+        }
+    }
+}
+
+#[test]
+fn status_codes_are_scoped_by_provider_and_endpoint() {
+    // In the official Meritz sample, 0001 denotes an order ACK and 5762
+    // a continuation code for order-history, NOT ticker success.
+    let good = r#"{"rsp_cd":"0000","data":{"stck_prpr":"10"}}"#;
+    assert_eq!(last("meritz", good), "10");
+    for code in ["0001", "5762", "5766", "5820", "5822", "UNKNOWN"] {
+        let payload = format!(r#"{{"rsp_cd":"{code}","data":{{"stck_prpr":"10"}}}}"#);
+        let err = decode(Broker::Meritz, "005930", Venue::Krx, &payload).unwrap_err();
+        assert_eq!(err.field, "rsp_cd");
+        assert_eq!(err.kind, DecodeKind::SourceStatus);
+        assert!(!err.to_string().contains(code));
+    }
+    for (broker, payload, field) in [
+        (Broker::Kis, r#"{"rt_cd":0,"output":{"stck_prpr":"10"}}"#, "rt_cd"),
+        (Broker::Kis, r#"{"rt_cd":null,"output":{"stck_prpr":"10"}}"#, "rt_cd"),
+        (Broker::Kiwoom, r#"{"return_code":"0","cur_prc":"10"}"#, "return_code"),
+        (Broker::Kiwoom, r#"{"return_code":null,"cur_prc":"10"}"#, "return_code"),
+        (Broker::Db, r#"{"rsp_cd":0,"Out":{"Prpr":"10"}}"#, "rsp_cd"),
+        (Broker::Meritz, r#"{"rsp_cd":null,"data":{"stck_prpr":"10"}}"#, "rsp_cd"),
+        (Broker::Meritz, r#"{"rsp_cd":0,"data":{"stck_prpr":"10"}}"#, "rsp_cd"),
+    ] {
+        let err = decode(broker, "005930", Venue::Krx, payload).unwrap_err();
+        assert_eq!(err.field, field);
+        assert_eq!(err.kind, DecodeKind::SourceStatus);
+    }
+}

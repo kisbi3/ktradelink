@@ -132,3 +132,27 @@ def test_native_entry_point_and_private_wrapper_agree() -> None:
     a = decode_ticker_candidate("meritz", "005930", "KRX", payload)
     b = native._decode_ticker_candidate("meritz", "005930", "KRX", payload)
     assert a == b and hash(a) == hash(b) and type(a) is Ticker
+
+
+@pytest.mark.parametrize("broker", list(SYNTHETIC))
+@pytest.mark.parametrize("symbol", ["", "005 930", "종목", "005930\n"])
+def test_invalid_caller_symbol_wins_before_json_decoding(broker: str, symbol: str) -> None:
+    # The same error contract applies regardless of which broker was selected.
+    with pytest.raises(ValueError, match=r"^symbol: CoreValidation$"):
+        decode_ticker_candidate(broker, symbol, "KRX", "this-is-not-valid-json")
+
+
+@pytest.mark.parametrize("code", ["0001", "5762", "5766", "5820", "5822"])
+def test_meritz_order_and_history_codes_are_not_ticker_success(code: str) -> None:
+    payload = json.dumps({"rsp_cd": code, "data": {"stck_prpr": "10"}})
+    with pytest.raises(ValueError, match=r"^rsp_cd: SourceStatus$"):
+        decode_ticker_candidate("meritz", "005930", "KRX", payload)
+
+
+def test_status_type_does_not_leak_across_brokers() -> None:
+    for broker, payload in (
+        ("kis", {"rt_cd": 0, "output": {"stck_prpr": "10"}}),
+        ("kiwoom", {"return_code": "0", "cur_prc": "10"}),
+    ):
+        with pytest.raises(ValueError, match="SourceStatus"):
+            decode_ticker_candidate(broker, "005930", "KRX", json.dumps(payload))
