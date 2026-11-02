@@ -11,4 +11,5 @@ crate-type = ["cdylib"]
 
 [dependencies]
 ktradelink-core = { path = "../../crates/ktradelink-core" }
+ktradelink-decoders = { path = "../../crates/ktradelink-decoders" }
 pyo3 = "=0.29.0"

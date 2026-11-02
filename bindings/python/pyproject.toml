@@ -5,7 +5,7 @@ build-backend = "maturin"
 [project]
 name = "ktradelink-native"
 version = "0.1.0"
-description = "Optional local native foundation for KTradeLink; no broker adapters"
+description = "Optional local Rust core and offline six-broker decoder candidates; no live broker adapters"
 requires-python = ">=3.11"
 dependencies = ["ktradelink==0.0.0.dev0"]
 

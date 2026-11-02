@@ -1,4 +1,4 @@
-"""Private optional Rust seam; not a broker API or public serialization layer."""
+"""Private optional Rust seam, NOT a published brokerage client."""
 
 from importlib import import_module
 from types import ModuleType
@@ -55,4 +55,17 @@ def build_ticker(
     )
     if not isinstance(result, Ticker):
         raise RuntimeError("Native core returned an incompatible model type.")
+    return result
+
+
+def decode_ticker_candidate(broker: str, symbol: str, venue: str, payload: str) -> Ticker:
+    """PRIVATE offline publisher-evidence decoder; NO broker/network request.
+
+    The caller's KRX/symbol context is not proof of an exchange-sourced price.
+    Supports six restricted synthetic response shapes, with strict validation.
+    Never expose this as a production/public fetch_ticker implementation.
+    """
+    result = _load_native()._decode_ticker_candidate(broker, symbol, venue, payload)
+    if not isinstance(result, Ticker):
+        raise RuntimeError("Native decoder returned an incompatible model type.")
     return result
