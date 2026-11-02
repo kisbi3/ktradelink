@@ -43,9 +43,13 @@ Evidence:
 - [Kiwoom stock-information publisher example](https://github.com/Kiwoom-Securities/Kiwoom-REST-API/blob/main/examples/%EA%B5%AD%EB%82%B4%EC%A3%BC%EC%8B%9D/%EC%A2%85%EB%AA%A9%EC%A0%95%EB%B3%B4/get_domestic_stock_info.py)
 - [Meritz current-price publisher sample](https://openapi.imeritz.com/samplecode-py)
 
-**No native field-level mapping has been confirmed yet for LS, DB, or Toss in
-this survey.** Do not guess field names. Source field existence is not proof
-that volume covers the same venue, session or trading phase.
+**Historical snapshot:** When this initial survey was written, LS, DB and
+Toss field-level mappings were still unconfirmed. The [follow-up evidence
+ledger](six-broker-ticker-decoders.md) now records publisher-sourced examples:
+LS onboarding demonstration (NOT real t1102 response), DB Out.Prpr and
+Toss result[].lastPrice. These are only offline decoder candidates,
+not verified broker adapters. Market, session and volume scope remain
+unverified.
 
 ## Intersection and initial implementation decision
 
