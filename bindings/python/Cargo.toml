@@ -1,0 +1,14 @@
+[package]
+name = "ktradelink-python"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[lib]
+name = "_ktradelink_native"
+crate-type = ["cdylib"]
+
+[dependencies]
+ktradelink-core = { path = "../../crates/ktradelink-core" }
+pyo3 = "=0.29.0"
