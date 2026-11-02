@@ -1,0 +1,33 @@
+name: Six-broker Rust offline decoder verification
+
+on:
+  pull_request:
+    paths:
+      - "crates/ktradelink-decoders/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/six-broker-decoders.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  decoder:
+    name: Six broker decoder Rust tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Rust toolchain
+        run: rustup show
+      - name: Resolve and test new decoder dependencies (initial PR bootstrap)
+        run: |
+          cargo generate-lockfile
+          cargo test -p ktradelink-decoders
+          cargo clippy -p ktradelink-decoders --all-targets -- -D warnings
+      - name: Upload exact resolved workspace lock for atomic follow-up commit
+        uses: actions/upload-artifact@v4
+        with:
+          name: six-broker-resolved-cargo-lock
+          path: Cargo.lock
+          if-no-files-found: error
