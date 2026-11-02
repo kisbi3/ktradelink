@@ -156,3 +156,59 @@ def test_status_type_does_not_leak_across_brokers() -> None:
     ):
         with pytest.raises(ValueError, match="SourceStatus"):
             decode_ticker_candidate(broker, "005930", "KRX", json.dumps(payload))
+
+
+@pytest.mark.parametrize(
+    ("record", "field", "kind"),
+    [
+        ({"result": []}, "symbol", "MissingRequired"),
+        ({"result": [{"symbol": 5930, "currency": "KRW", "lastPrice": "10"}]},
+         "symbol", "InvalidField"),
+        ({"result": [{"symbol": True, "currency": "KRW", "lastPrice": "10"}]},
+         "symbol", "InvalidField"),
+        ({"result": [{"symbol": None, "currency": "KRW", "lastPrice": "10"}]},
+         "symbol", "MissingRequired"),
+        ({"result": [{"symbol": "005930", "currency": None, "lastPrice": "10"}]},
+         "currency", "MissingRequired"),
+        ({"result": [{"symbol": "005930", "currency": 123, "lastPrice": "10"}]},
+         "currency", "InvalidField"),
+    ],
+)
+def test_toss_string_field_error_classification(
+    record: dict, field: str, kind: str
+) -> None:
+    with pytest.raises(ValueError, match=rf"^{field}: {kind}$"):
+        decode_ticker_candidate("toss", "005930", "KRX", json.dumps(record))
+
+
+@pytest.mark.parametrize(("broker", "field", "pricefield"), [
+    ("kiwoom", "stk_cd", "cur_prc"),
+    ("ls", "shcode", "price"),
+])
+def test_optional_native_identifier_type_errors(
+    broker: str, field: str, pricefield: str
+) -> None:
+    for value in (None, 5930, False):
+        payload = json.dumps({field: value, pricefield: "10"})
+        with pytest.raises(ValueError, match=rf"^{field}: InvalidField$"):
+            decode_ticker_candidate(broker, "005930", "KRX", payload)
+    with pytest.raises(ValueError, match=rf"^{field}: AmbiguousSymbol$"):
+        decode_ticker_candidate(broker, "005930", "KRX",
+                                json.dumps({field: "000660", pricefield: "10"}))
+
+
+def test_ls_onboarding_price_string_and_negative_integer() -> None:
+    good = decode_ticker_candidate("ls", "005930", "KRX",
+                                   '{"shcode":"005930","price":"72000.00"}')
+    assert good.last.as_tuple() == Decimal("72000.00").as_tuple()
+    with pytest.raises(ValueError, match=r"^price: InvalidPrice$"):
+        decode_ticker_candidate("ls", "005930", "KRX", '{"shcode":"005930","price":-72000}')
+
+
+def test_exact_maximum_json_bytes_and_one_byte_too_many() -> None:
+    source = '{"output":{"stck_prpr":"10"}}'
+    exactly = source + " " * (1_048_576 - len(source))
+    assert len(exactly.encode("utf-8")) == 1_048_576
+    assert decode_ticker_candidate("kis", "005930", "KRX", exactly).last == Decimal("10")
+    with pytest.raises(ValueError, match=r"^payload: OversizedInput$"):
+        decode_ticker_candidate("kis", "005930", "KRX", exactly + " ")

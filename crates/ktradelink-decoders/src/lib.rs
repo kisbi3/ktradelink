@@ -223,9 +223,10 @@ fn matching_identifier(
     requested: &str,
 ) -> Result<(), DecodeError> {
     match record.get(key) {
-        None => Ok(()),
+        None => Ok(()), // Optional field absent in some publisher examples.
         Some(Value::String(actual)) if actual == requested => Ok(()),
-        _ => Err(error(key, DecodeKind::AmbiguousSymbol)),
+        Some(Value::String(_)) => Err(error(key, DecodeKind::AmbiguousSymbol)),
+        Some(_) => Err(error(key, DecodeKind::InvalidField)),
     }
 }
 
@@ -233,9 +234,11 @@ fn required_str<'a>(
     record: &'a Map<String, Value>,
     key: &'static str,
 ) -> Result<&'a str, DecodeError> {
-    record.get(key)
-        .and_then(Value::as_str)
-        .ok_or_else(|| error(key, DecodeKind::MissingRequired))
+    match record.get(key) {
+        None | Some(Value::Null) => Err(error(key, DecodeKind::MissingRequired)),
+        Some(Value::String(value)) => Ok(value.as_str()),
+        Some(_) => Err(error(key, DecodeKind::InvalidField)),
+    }
 }
 
 fn toss_record<'a>(

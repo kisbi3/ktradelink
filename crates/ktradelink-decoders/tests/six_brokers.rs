@@ -203,3 +203,75 @@ fn status_codes_are_scoped_by_provider_and_endpoint() {
         assert_eq!(err.kind, DecodeKind::SourceStatus);
     }
 }
+
+#[test]
+fn malformed_toss_string_types_are_not_classified_as_missing() {
+    let cases = [
+        (r#"{"result":[]}"#, "symbol", DecodeKind::MissingRequired),
+        (r#"{"result":[{"symbol":5930,"currency":"KRW","lastPrice":"10"}]}"#,
+            "symbol", DecodeKind::InvalidField),
+        (r#"{"result":[{"symbol":true,"currency":"KRW","lastPrice":"10"}]}"#,
+            "symbol", DecodeKind::InvalidField),
+        (r#"{"result":[{"symbol":null,"currency":"KRW","lastPrice":"10"}]}"#,
+            "symbol", DecodeKind::MissingRequired),
+        (r#"{"result":[{"symbol":"005930","currency":null,"lastPrice":"10"}]}"#,
+            "currency", DecodeKind::MissingRequired),
+        (r#"{"result":[{"symbol":"005930","currency":123,"lastPrice":"10"}]}"#,
+            "currency", DecodeKind::InvalidField),
+        (r#"{"result":[{"symbol":"005930","currency":false,"lastPrice":"10"}]}"#,
+            "currency", DecodeKind::InvalidField),
+        (r#"{"result":[{"symbol":"000660","currency":"KRW","lastPrice":"10"}]}"#,
+            "symbol", DecodeKind::MissingRequired),
+    ];
+    for (payload, field, kind) in cases {
+        let err = decode(Broker::Toss, "005930", Venue::Krx, payload).unwrap_err();
+        assert_eq!(err.field, field);
+        assert_eq!(err.kind, kind);
+    }
+}
+
+#[test]
+fn optional_native_identifiers_are_malformed_only_when_present_invalid() {
+    for (broker, field, last_field) in [
+        (Broker::Kiwoom, "stk_cd", "cur_prc"),
+        (Broker::Ls, "shcode", "price"),
+    ] {
+        // Missing identifier is a valid synthetic publisher-response candidate.
+        let missing = format!(r#"{{"{last_field}":"10"}}"#);
+        assert!(decode(broker, "005930", Venue::Krx, &missing).is_ok());
+
+        for invalid in ["null", "5930", "false"] {
+            let payload = format!(r#"{{"{field}":{invalid},"{last_field}":"10"}}"#);
+            let err = decode(broker, "005930", Venue::Krx, &payload).unwrap_err();
+            assert_eq!(err.field, field);
+            assert_eq!(err.kind, DecodeKind::InvalidField);
+        }
+
+        let mismatch = format!(r#"{{"{field}":"000660","{last_field}":"10"}}"#);
+        let err = decode(broker, "005930", Venue::Krx, &mismatch).unwrap_err();
+        assert_eq!(err.field, field);
+        assert_eq!(err.kind, DecodeKind::AmbiguousSymbol);
+    }
+}
+
+#[test]
+fn maximum_json_byte_size_accepts_exactly_boundary_not_one_more() {
+    let minimal = r#"{"output":{"stck_prpr":"10"}}"#;
+    let exact = format!("{minimal}{}", " ".repeat(1_048_576 - minimal.len()));
+    assert_eq!(exact.len(), 1_048_576);
+    assert_eq!(decode(Broker::Kis, "005930", Venue::Krx, &exact)
+        .unwrap().input().prices.last.as_ref().unwrap().as_str(), "10");
+
+    let too_large = format!("{exact} ");
+    let err = decode(Broker::Kis, "005930", Venue::Krx, &too_large).unwrap_err();
+    assert_eq!(err.kind, DecodeKind::OversizedInput);
+}
+
+#[test]
+fn ls_onboarding_accepts_price_text_and_rejects_negative_json_integer() {
+    assert_eq!(last("ls", r#"{"shcode":"005930","price":"72000.00"}"#), "72000.00");
+    let err = decode(Broker::Ls, "005930", Venue::Krx,
+        r#"{"shcode":"005930","price":-72000}"#).unwrap_err();
+    assert_eq!(err.field, "price");
+    assert_eq!(err.kind, DecodeKind::InvalidPrice);
+}
