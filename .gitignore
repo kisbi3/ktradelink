@@ -11,6 +11,11 @@ htmlcov/
 .venv/
 venv/
 
+# Experimental native build outputs
+experiments/rust-parse/target/
+experiments/rust-parse/*.so
+experiments/rust-parse/*.pyd
+
 # Credentials and local configuration
 .env
 .env.*

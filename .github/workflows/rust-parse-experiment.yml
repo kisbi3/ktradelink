@@ -1,0 +1,57 @@
+name: Rust/Python parser experiment
+
+on:
+  pull_request:
+    paths:
+      - "experiments/rust-parse/**"
+      - "docs/decisions/0004-rust-core-benchmark-first.md"
+      - ".github/workflows/rust-parse-experiment.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    name: Rust probe Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.13"]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            experiments/rust-parse/pyproject.toml
+      - name: Setup Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustc --version
+          cargo --version
+      - name: Install Python SDK and isolated benchmark build tools
+        run: |
+          python -m pip install -e .
+          python -m pip install "pytest>=8" "maturin>=1.9,<2"
+          maturin --version
+      - name: Compile optimized experimental Rust extension
+        run: |
+          maturin build --release \
+            --manifest-path experiments/rust-parse/Cargo.toml \
+            --interpreter python \
+            --out "$RUNNER_TEMP/rust-probe-wheels"
+          python -m pip install "$RUNNER_TEMP"/rust-probe-wheels/ktl_rust_parse_probe-*.whl
+      - name: Verify parity and malformed input contracts
+        run: python -m pytest -q experiments/rust-parse/tests
+      - name: Measure Python vs Rust without network calls
+        run: |
+          python experiments/rust-parse/benchmark.py \
+            --samples 2000 --repeats 9 \
+            --output "$RUNNER_TEMP/rust-parse-results.json"
