@@ -7,6 +7,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo, reset_tzpath
 
 import ktradelink
+from ktradelink._request_plan import authentication_requirements, plan_ticker_request
 from ktradelink.models import Candle, OrderBook, OrderBookLevel, Ticker
 
 
@@ -32,7 +33,13 @@ def main() -> None:
     assert len({candle, quote, book}) == 3
     assert not hasattr(candle, "to_dict")
     assert not hasattr(book, "to_json")
-    print(f"Installed typed-model and timezone checks passed: {installed}")
+    for broker in ("kis", "kiwoom", "ls", "db", "toss", "meritz"):
+        plan = plan_ticker_request(broker, "005930", venue="KRX", environment="live")
+        assert not plan.transport_implemented and plan.origin.startswith("https://")
+        assert not authentication_requirements(
+            broker, environment="live"
+        ).token_exchange_implemented
+    print(f"Installed typed-model and offline request-plan checks passed: {installed}")
 
 
 if __name__ == "__main__":

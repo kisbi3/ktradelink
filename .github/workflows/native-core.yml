@@ -18,6 +18,10 @@ on:
       - "docs/brokers/six-broker-ticker-decoders.md"
       - "docs/brokers/six-broker-common-surface.md"
       - "docs/brokers/README.md"
+      - "docs/decisions/0007*"
+      - "docs/brokers/six-broker-quote-request-auth.md"
+      - "docs/usage/offline-six-broker-request-plans.md"
+      - "tools/check_installed_models.py"
   pull_request:
     paths:
       - "Cargo.toml"
@@ -35,6 +39,10 @@ on:
       - "docs/brokers/six-broker-ticker-decoders.md"
       - "docs/brokers/six-broker-common-surface.md"
       - "docs/brokers/README.md"
+      - "docs/decisions/0007*"
+      - "docs/brokers/six-broker-quote-request-auth.md"
+      - "docs/usage/offline-six-broker-request-plans.md"
+      - "tools/check_installed_models.py"
       - "docs/decisions/0005*"
       - "docs/usage/rust-core*"
   workflow_dispatch:

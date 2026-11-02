@@ -12,7 +12,19 @@ import ktradelink
 from decimal import Decimal
 from ktradelink.models import Ticker
 from ktradelink._native import NativeCoreUnavailable, build_ticker, decode_ticker_candidate
+from ktradelink._request_plan import (
+    authentication_requirements, decode_offline_quote_response, plan_ticker_request
+)
 assert Ticker("005930", "KRX", "synthetic", Decimal(0)).last == 0
+plan = plan_ticker_request("kis", "005930", venue="KRX", environment="live")
+assert plan.method == "GET" and plan.transport_implemented is False
+assert authentication_requirements("kis", environment="live").token_exchange_implemented is False
+try:
+    decode_offline_quote_response(plan, http_status=200, json_text="{}")
+except NativeCoreUnavailable:
+    pass
+else:
+    raise AssertionError("offline native decoder unexpectedly available")
 for operation in (
     lambda: build_ticker("005930", "KRX", "synthetic"),
     lambda: decode_ticker_candidate("kis", "005930", "KRX", "{}"),
@@ -32,6 +44,7 @@ from pathlib import Path
 import _ktradelink_native
 import ktradelink
 from ktradelink._native import build_ticker, core_version, decode_ticker_candidate
+from ktradelink._request_plan import decode_offline_quote_response, plan_ticker_request
 from ktradelink.models import Ticker
 root = Path(sys.prefix).resolve()
 for module in (ktradelink, _ktradelink_native):
@@ -54,6 +67,10 @@ for broker, payload in examples.items():
     quote = decode_ticker_candidate(broker, "005930", "KRX", payload)
     assert type(quote) is Ticker and quote.last == Decimal("72000")
     assert quote.broker == broker and quote.info == {}
+    plan = plan_ticker_request(broker, "005930", venue="KRX", environment="live")
+    new_quote = decode_offline_quote_response(plan, http_status=200, json_text=payload)
+    assert type(new_quote) is Ticker and new_quote == quote
+    assert plan.transport_implemented is False
 assert (Path(ktradelink.__file__).parent / "py.typed").is_file()
 print("Isolated native wheel -> six offline decoder candidates -> existing Ticker: passed")
 '''
