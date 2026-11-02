@@ -9,6 +9,8 @@ provenance/venue contract. The existing Python Ticker API is untouched.
 import json
 from dataclasses import dataclass
 
+from ktradelink.models import Ticker
+
 
 class QuotePlanUnavailable(ValueError):
     """A provider route, market, identifier or environment is not evidenced."""
@@ -228,7 +230,7 @@ def plan_ticker_request(
 
 def decode_offline_quote_response(
     plan: QuoteRequestPlan, *, http_status: int, json_text: str
-):
+) -> Ticker:
     """Test-only status gate -> existing native parser -> existing Python Ticker.
 
     This does not send anything. The HTTP status and JSON were supplied by

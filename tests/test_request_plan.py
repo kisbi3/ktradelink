@@ -2,6 +2,8 @@
 
 import dataclasses
 import json
+import subprocess
+import sys
 
 import pytest
 
@@ -50,6 +52,20 @@ EXPECTED = {
     ),
 }
 
+
+
+def test_offline_quote_return_type_resolves_without_loading_native() -> None:
+    """A runtime-resolvable Ticker hint must not eagerly load the optional Rust module."""
+    code = (
+        "import sys\n"
+        "from typing import get_type_hints\n"
+        "from ktradelink._request_plan import decode_offline_quote_response\n"
+        "from ktradelink.models import Ticker\n"
+        "assert get_type_hints(decode_offline_quote_response)['return'] is Ticker\n"
+        "assert 'ktradelink._native' not in sys.modules\n"
+        "assert '_ktradelink_native' not in sys.modules\n"
+    )
+    subprocess.run([sys.executable, "-I", "-c", code], check=True)
 
 @pytest.mark.parametrize("broker", BROKERS)
 def test_all_six_provider_quote_templates_have_exact_documented_shapes(
