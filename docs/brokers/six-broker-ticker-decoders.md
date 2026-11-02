@@ -27,6 +27,50 @@ adapters. LS is specifically **onboarding-demo-only**. A production LS `t1102`
 profile requires verifying the official TR-specific response block. Unverified
 endpoints must never be claimed as working.
 
+## Meritz status-code evidence and endpoint-specific guard
+
+Source: [Official Meritz Python sample](https://openapi.imeritz.com/samplecode-py),
+accessed 2026-11-02. Its general-purpose helper lists codes
+0000, 0001, 5762, 5766, 5820 and 5822 as acceptable across different
+API families. This list does NOT assert that those values signify
+success for the specific current-price GET /market/v1/prices endpoint.
+
+The same official page identifies 0001 as an order receipt, 5762 as
+order-history continuation, 5766 as completion of account/order history
+queries, and 5820 as empty order history. It does NOT establish a
+current-price meaning for 5822. These codes cannot be blindly
+accepted in the ticker decoder.
+
+For the constrained, synthetic current-price decoder, only the
+conservative TEXTUAL candidate rsp_cd="0000" is accepted if present.
+The publisher's market-data order-book example reports this code.
+However, the current-price sample does not present a raw success
+envelope proving that 0000 is the ONLY current-price success code.
+Exact GET /market/v1/prices status semantics remain UNVERIFIED.
+A production adapter must verify its own endpoint-specific contract.
+Missing status is tolerated only for synthetic examples, not as
+permission to ignore actual HTTP or provider error status.
+
+## Shared input and error boundaries after Gemini review
+
+- Caller symbol is checked for nonempty ASCII graphic characters
+  before parsing ANY JSON for every one of the six broker candidates.
+  The error is field symbol, kind CoreValidation in every case.
+- Missing/null required Toss symbol/currency string fields are
+  MissingRequired; present number or boolean is InvalidField.
+- Optional Kiwoom stk_cd and LS shcode may be absent in an offline
+  sample. If present, null/number/bool are InvalidField; a well-formed
+  mismatched string is AmbiguousSymbol.
+- Status values are broker-specific when present: KIS rt_cd string
+  "0", Kiwoom return_code numeric integer 0, DB rsp_cd string
+  "00000", Meritz rsp_cd string "0000" as limited above.
+  Present null and wrong JSON types fail SourceStatus.
+- The upper input-size bound is inclusive: 1,048,576 UTF-8 bytes
+  can decode; 1,048,577 bytes rejects before JSON parsing. This
+  is an application safety limit, NOT a broker publisher limit.
+- LS onboarding demo price accepts an unsigned JSON integer or
+  unsigned fixed-decimal string; a negative JSON integer fails.
+  This still does not describe real LS t1102OutBlock semantics.
 ## Decoder semantics and provenance policy
 
 1. **The caller explicitly supplies** `symbol` and `venue="KRX"`; the offline

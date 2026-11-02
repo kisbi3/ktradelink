@@ -71,9 +71,20 @@ broker sent it.
 - If no evidenced field is present, the corresponding value is `None`.
   A valid literal zero stays 0. Empty or malformed present fields fail rather
   than being silently replaced. Never infer bid/ask from separate endpoints.
+- Caller symbol is validated before JSON parsing in ALL six profiles.
+  Toss required symbol/currency fields distinguish missing/null from
+  malformed type; optional Kiwoom/LS identifiers distinguish wrong type
+  from an actual string mismatch. The one-megabyte JSON limit is
+  inclusive, with an explicit exact-boundary test.
 - JSON duplicate keys anywhere, malformed response envelopes, unsupported
   venue and non-success documented status codes cause explicit field-named
-  errors. Native payloads are never logged or passed through `info`.
+  errors. When a status is present, its JSON type and success value must
+  match that broker: KIS text "0", Kiwoom integer 0, DB text "00000",
+  Meritz text "0000" only (limited offline candidate, actual quote
+  success status needs real-provider verification). The official Meritz
+  general OK_CODES list mixes order/history/market API families and must
+  NOT be used wholesale as ticker success. Native payloads are never
+  logged or passed through `info`.
 - Rust Core is still transport-independent and Python-free; the separate
   decoder crate depends on serde/serde_json, not the other way around.
 - No capability matrix item becomes `implemented`, `supported` or
