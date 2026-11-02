@@ -1,0 +1,121 @@
+name: Rust core foundation
+
+on:
+  push:
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - "crates/**"
+      - "bindings/**"
+      - "src/ktradelink/**"
+      - "tests/test_native_loader.py"
+      - "tools/check_native_install.py"
+      - "tools/build_review_packet.py"
+      - ".github/workflows/native-core.yml"
+  pull_request:
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - "crates/**"
+      - "bindings/**"
+      - "src/ktradelink/**"
+      - "tests/test_native_loader.py"
+      - "tools/check_native_install.py"
+      - "tools/build_review_packet.py"
+      - ".github/workflows/native-core.yml"
+      - "docs/decisions/0005*"
+      - "docs/usage/rust-core*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  core:
+    name: Pure Rust core
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pinned Rust toolchain
+        run: rustup show
+      - name: Core-only tests and Clippy
+        run: |
+          cargo test -p ktradelink-core
+          cargo clippy -p ktradelink-core --all-targets -- -D warnings
+          cargo tree -p ktradelink-core
+      - name: Preserve resolved workspace lock
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-core-lock
+          path: Cargo.lock
+          if-no-files-found: error
+
+  native:
+    name: Native ${{ matrix.os }} Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: ubuntu-latest, python: "3.11"}
+          - {os: ubuntu-latest, python: "3.12"}
+          - {os: ubuntu-latest, python: "3.13"}
+          - {os: windows-latest, python: "3.13"}
+          - {os: macos-latest, python: "3.13"}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Pinned Rust toolchain
+        run: rustup show
+      - name: Install Python test and build tools
+        run: python -m pip install -e ".[dev]" "maturin==1.16.0" build
+      - name: Build native wheel and source distribution
+        run: |
+          python -m maturin build --release --manifest-path bindings/python/Cargo.toml --interpreter python --out "$RUNNER_TEMP/native-wheel"
+          python -m maturin sdist --manifest-path bindings/python/Cargo.toml --out "$RUNNER_TEMP/native-sdist"
+          python -c 'import glob, os, subprocess, sys; wheels=glob.glob(os.path.join(os.environ["RUNNER_TEMP"],"native-wheel","*.whl")); assert len(wheels)==1; subprocess.check_call([sys.executable,"-m","pip","install","--no-deps",wheels[0]])'
+      - name: Existing and native Python contracts
+        run: python -m pytest -q tests bindings/python/tests
+      - name: Build unchanged Python package and verify isolated installation
+        run: |
+          python -m build --outdir "$RUNNER_TEMP/python-wheel"
+          python tools/check_native_install.py --python-dist "$RUNNER_TEMP/python-wheel" --native-dist "$RUNNER_TEMP/native-wheel"
+      - name: Preserve native wheel and source artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.os }}-py${{ matrix.python }}
+          path: |
+            ${{ runner.temp }}/native-wheel/*
+            ${{ runner.temp }}/native-sdist/*
+          if-no-files-found: error
+
+  review-packet:
+    name: Original-source review TXT
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Create commit-pinned text for independent review
+        env:
+          REVIEW_HEAD: ${{ github.event.pull_request.head.sha }}
+          REVIEW_BASE: ${{ github.event.pull_request.base.sha }}
+        run: python tools/build_review_packet.py --head "$REVIEW_HEAD" --base "$REVIEW_BASE" --output "$RUNNER_TEMP/KTradeLink-Rust-Core-Gemini-review.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rust-core-gemini-review-txt
+          path: ${{ runner.temp }}/KTradeLink-Rust-Core-Gemini-review.txt
+          if-no-files-found: error

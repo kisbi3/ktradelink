@@ -11,6 +11,10 @@ htmlcov/
 .venv/
 venv/
 
+# Native build outputs (Cargo.lock is intentionally tracked)
+/target/
+bindings/python/target/
+
 # Experimental native build outputs
 experiments/rust-parse/target/
 experiments/rust-parse/*.so
