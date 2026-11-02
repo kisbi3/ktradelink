@@ -1,0 +1,5 @@
+[workspace]
+members = ["crates/ktradelink-core"]
+default-members = ["crates/ktradelink-core"]
+exclude = ["experiments/rust-parse"]
+resolver = "2"

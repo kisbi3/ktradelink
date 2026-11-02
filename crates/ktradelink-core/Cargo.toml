@@ -1,0 +1,10 @@
+[package]
+name = "ktradelink-core"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "MIT"
+publish = false
+description = "Transport-neutral KTradeLink value primitives; no broker integration yet"
+
+[dependencies]
