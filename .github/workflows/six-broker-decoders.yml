@@ -1,0 +1,59 @@
+name: Six-broker Rust offline decoder verification
+
+on:
+  push:
+    paths:
+      - "crates/ktradelink-core/**"
+      - "crates/ktradelink-decoders/**"
+      - "bindings/python/**"
+      - "src/ktradelink/_native.py"
+      - "tests/test_six_broker_loader.py"
+      - "rust-toolchain.toml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "docs/decisions/0006*"
+      - "docs/usage/offline-six-broker*"
+      - "docs/brokers/six-broker-ticker-decoders.md"
+      - "docs/brokers/six-broker-common-surface.md"
+      - "docs/brokers/README.md"
+      - ".github/workflows/six-broker-decoders.yml"
+  pull_request:
+    paths:
+      - "crates/ktradelink-core/**"
+      - "crates/ktradelink-decoders/**"
+      - "bindings/python/**"
+      - "src/ktradelink/_native.py"
+      - "tests/test_six_broker_loader.py"
+      - "rust-toolchain.toml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "docs/decisions/0006*"
+      - "docs/usage/offline-six-broker*"
+      - "docs/brokers/six-broker-ticker-decoders.md"
+      - "docs/brokers/six-broker-common-surface.md"
+      - "docs/brokers/README.md"
+      - ".github/workflows/six-broker-decoders.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  decoder:
+    name: Six broker decoder Rust tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Rust toolchain
+        run: rustup show
+      - name: Run locked offline decoder contract tests
+        run: |
+          cargo test --locked -p ktradelink-decoders
+          cargo clippy --locked -p ktradelink-decoders --all-targets -- -D warnings
+          git diff --exit-code -- Cargo.lock
+      - name: Archive committed dependency lock as CI evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: six-broker-resolved-cargo-lock
+          path: Cargo.lock
+          if-no-files-found: error

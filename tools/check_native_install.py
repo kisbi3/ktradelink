@@ -11,14 +11,18 @@ MISSING_CHECK = '''
 import ktradelink
 from decimal import Decimal
 from ktradelink.models import Ticker
-from ktradelink._native import NativeCoreUnavailable, build_ticker
+from ktradelink._native import NativeCoreUnavailable, build_ticker, decode_ticker_candidate
 assert Ticker("005930", "KRX", "synthetic", Decimal(0)).last == 0
-try:
-    build_ticker("005930", "KRX", "synthetic")
-except NativeCoreUnavailable:
-    pass
-else:
-    raise AssertionError("native extension unexpectedly present in fresh venv")
+for operation in (
+    lambda: build_ticker("005930", "KRX", "synthetic"),
+    lambda: decode_ticker_candidate("kis", "005930", "KRX", "{}"),
+):
+    try:
+        operation()
+    except NativeCoreUnavailable:
+        pass
+    else:
+        raise AssertionError("native extension unexpectedly present in fresh venv")
 '''
 
 INSTALLED_CHECK = '''
@@ -27,7 +31,7 @@ from decimal import Decimal
 from pathlib import Path
 import _ktradelink_native
 import ktradelink
-from ktradelink._native import build_ticker, core_version
+from ktradelink._native import build_ticker, core_version, decode_ticker_candidate
 from ktradelink.models import Ticker
 root = Path(sys.prefix).resolve()
 for module in (ktradelink, _ktradelink_native):
@@ -38,8 +42,20 @@ assert type(result) is Ticker
 assert result.last.as_tuple() == Decimal(text).as_tuple()
 assert result.volume == 0 and result.timestamp is None
 assert result.info == {} and core_version() == "0.1.0"
+examples = {
+    "kis": '{"output":{"stck_prpr":"72000","acml_vol":"0"}}',
+    "kiwoom": '{"cur_prc":"72000","trde_qty":"0"}',
+    "ls": '{"price":72000}',
+    "db": '{"Out":{"Prpr":"72000"}}',
+    "toss": '{"result":[{"symbol":"005930","currency":"KRW","lastPrice":"72000"}]}',
+    "meritz": '{"data":{"stck_prpr":"72000","acml_vol":"0"}}',
+}
+for broker, payload in examples.items():
+    quote = decode_ticker_candidate(broker, "005930", "KRX", payload)
+    assert type(quote) is Ticker and quote.last == Decimal("72000")
+    assert quote.broker == broker and quote.info == {}
 assert (Path(ktradelink.__file__).parent / "py.typed").is_file()
-print("Isolated native wheel -> existing typed Ticker: passed")
+print("Isolated native wheel -> six offline decoder candidates -> existing Ticker: passed")
 '''
 
 
