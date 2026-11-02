@@ -3,20 +3,18 @@
 This is a value type only: no broker calls, parsing, or credential handling.
 """
 
-import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from decimal import Decimal
-from types import MappingProxyType
 
-InfoScalar = str | int | bool | Decimal | None
-
-# A denylist is defense in depth, never a substitute for source-field allowlisting.
-_SENSITIVE_KEY_FRAGMENTS = (
-    "token", "secret", "password", "account", "authorization",
-    "credential", "cookie", "apikey", "appkey", "acnt", "acct", "seckey",
+from ktradelink.models._validation import (
+    InfoScalar,
+    freeze_info,
+    validate_integer,
+    validate_price,
+    validate_provenance,
 )
-_VENUES = frozenset({"KRX", "NXT", "BROKER_COMPOSITE"})
+
 _PRICES = ("last", "open", "high", "low", "previous_close", "bid", "ask")
 _TIMESTAMPS = ("timestamp", "retrieved_at")
 
@@ -47,65 +45,12 @@ class Ticker:
     scope_description: str | None = None
 
     def __post_init__(self) -> None:
-        for name in ("symbol", "broker"):
-            value = getattr(self, name)
-            if (
-                not isinstance(value, str)
-                or not value
-                or value != value.strip()
-                or any(char.isspace() or not char.isprintable() for char in value)
-            ):
-                raise ValueError(f"{name} must be a printable string without whitespace")
-
-        if not isinstance(self.venue, str) or self.venue not in _VENUES:
-            raise ValueError(f"venue must be one of {sorted(_VENUES)!r}")
-        if self.venue == "BROKER_COMPOSITE" and (
-            not isinstance(self.scope_description, str)
-            or not self.scope_description.strip()
-        ):
-            raise ValueError("composite quote requires scope_description")
-        if self.scope_description is not None and (
-            not isinstance(self.scope_description, str)
-            or self.scope_description != self.scope_description.strip()
-            or not self.scope_description
-            or any(not char.isprintable() for char in self.scope_description)
-        ):
-            raise ValueError("scope_description must be printable and trimmed")
-
+        validate_provenance(self.symbol, self.venue, self.broker, self.scope_description)
         for name in _PRICES:
-            value = getattr(self, name)
-            if value is not None and (
-                not isinstance(value, Decimal)
-                or not value.is_finite()
-                or value.is_signed()
-            ):
-                raise ValueError(f"{name} must be an unsigned finite Decimal or None")
+            validate_price(name, getattr(self, name))
         for name in (*_TIMESTAMPS, "volume"):
-            value = getattr(self, name)
-            if value is not None and (
-                isinstance(value, bool) or not isinstance(value, int) or value < 0
-            ):
-                raise ValueError(f"{name} must be a nonnegative integer or None")
-
-        if not isinstance(self.info, Mapping):
-            raise TypeError("info must be a mapping of safe scalar metadata")
-        snapshot: dict[str, InfoScalar] = {}
-        for key, value in self.info.items():
-            if not isinstance(key, str):
-                raise TypeError("info keys must be strings")
-            normalized_key = "".join(char for char in key.casefold() if char.isalnum())
-            key_parts = re.split(r"[^a-z0-9]+", key.casefold())
-            if (
-                any(term in normalized_key for term in _SENSITIVE_KEY_FRAGMENTS)
-                or "cano" in key_parts
-            ):
-                raise ValueError("info must not contain authentication/account fields")
-            if not (value is None or isinstance(value, (str, int, bool, Decimal))):
-                raise TypeError("info values must be immutable scalar metadata")
-            if isinstance(value, Decimal) and not value.is_finite():
-                raise ValueError("info decimals must be finite")
-            snapshot[key] = value
-        object.__setattr__(self, "info", MappingProxyType(snapshot))
+            validate_integer(name, getattr(self, name))
+        object.__setattr__(self, "info", freeze_info(self.info))
 
     def __hash__(self) -> int:
         """Hash all equality fields, including sanitized scalar metadata.
@@ -131,4 +76,3 @@ class Ticker:
             self.ask,
             self.scope_description,
         ))
-
