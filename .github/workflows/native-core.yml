@@ -44,7 +44,9 @@ jobs:
       - name: Core-only tests and Clippy
         run: |
           cargo test --locked -p ktradelink-core
+          cargo test --locked -p ktradelink-decoders
           cargo clippy --locked -p ktradelink-core --all-targets -- -D warnings
+          cargo clippy --locked -p ktradelink-decoders --all-targets -- -D warnings
           cargo tree --locked -p ktradelink-core
           git diff --exit-code -- Cargo.lock
       - name: Preserve resolved workspace lock

@@ -20,12 +20,12 @@ jobs:
       - uses: actions/checkout@v4
       - name: Check Rust toolchain
         run: rustup show
-      - name: Resolve and test new decoder dependencies (initial PR bootstrap)
+      - name: Run locked offline decoder contract tests
         run: |
-          cargo generate-lockfile
-          cargo test -p ktradelink-decoders
-          cargo clippy -p ktradelink-decoders --all-targets -- -D warnings
-      - name: Upload exact resolved workspace lock for atomic follow-up commit
+          cargo test --locked -p ktradelink-decoders
+          cargo clippy --locked -p ktradelink-decoders --all-targets -- -D warnings
+          git diff --exit-code -- Cargo.lock
+      - name: Archive committed dependency lock as CI evidence
         uses: actions/upload-artifact@v4
         with:
           name: six-broker-resolved-cargo-lock
