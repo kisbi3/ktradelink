@@ -171,7 +171,7 @@ fn caller_symbol_validation_precedes_json_parsing_in_every_broker() {
             let err = decode(broker, bad, Venue::Krx, "not-valid-json").unwrap_err();
             assert_eq!(err.field, "symbol");
             assert_eq!(err.kind, DecodeKind::CoreValidation);
-            assert!(!err.to_string().contains(bad));
+            assert_eq!(err.to_string(), "symbol: CoreValidation");
         }
     }
 }
