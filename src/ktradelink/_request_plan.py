@@ -6,8 +6,8 @@ without a separately reviewed transport, credential provider, and response
 provenance/venue contract. The existing Python Ticker API is untouched.
 """
 
-from dataclasses import dataclass
 import json
+from dataclasses import dataclass
 
 
 class QuotePlanUnavailable(ValueError):
