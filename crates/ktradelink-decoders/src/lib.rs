@@ -238,10 +238,10 @@ fn toss_record<'a>(
     let mut selected = None;
     for row in rows {
         let entry = object(row, "result")?;
-        if required_str(entry, "symbol")? == requested {
-            if selected.replace(entry).is_some() {
-                return Err(error("symbol", DecodeKind::AmbiguousSymbol));
-            }
+        if required_str(entry, "symbol")? == requested
+            && selected.replace(entry).is_some()
+        {
+            return Err(error("symbol", DecodeKind::AmbiguousSymbol));
         }
     }
     let selected = selected.ok_or_else(|| error("symbol", DecodeKind::MissingRequired))?;
