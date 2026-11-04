@@ -22,6 +22,7 @@ MAX_BODY_BYTES = 1_048_576  # Library-owned limit, not a provider limit.
 class FailureKind(Enum):
     INVALID_INPUT = "invalid_offline_input"
     CREDENTIAL_UNAVAILABLE = "fake_credential_unavailable"
+    LEASE_INVALID_AFTER_EXCHANGE = "fake_lease_invalid_after_exchange"
     CONTEXT_MISMATCH = "fake_response_context_mismatch"
     SCRIPT_EXHAUSTED = "fake_transport_script_exhausted"
     TIMEOUT = "simulated_timeout"
@@ -176,6 +177,10 @@ class FakeResponse:
         _plan(self.request)
         if type(self.lease) is not FakeLease or type(self.outcome) is not FixtureOutcome:
             raise OfflineSessionError(FailureKind.INVALID_INPUT)
+        if (self.lease.scope.broker, self.lease.scope.environment) != (
+            self.request.broker, self.request.environment
+        ):
+            raise OfflineSessionError(FailureKind.CONTEXT_MISMATCH)
         if type(self.http_status) is not int or not 100 <= self.http_status <= 599:
             raise OfflineSessionError(FailureKind.INVALID_INPUT)
         _integer(self.elapsed_ms)
@@ -208,6 +213,10 @@ class FakeTransport:
         _plan(plan)
         if type(lease) is not FakeLease:
             raise OfflineSessionError(FailureKind.INVALID_INPUT)
+        if (lease.scope.broker, lease.scope.environment) != (
+            plan.broker, plan.environment
+        ):
+            raise OfflineSessionError(FailureKind.CONTEXT_MISMATCH)
         index = self._calls
         self._calls += 1
         if index >= len(self._responses):
@@ -219,7 +228,8 @@ class FakeTransport:
 
 
 def _http_failure(status: int) -> FailureKind | None:
-    if 200 <= status < 300:
+    # Offline quote fixtures support an exact 200, not unverified partial/empty 2xx.
+    if status == 200:
         return None
     if 300 <= status < 400:
         return FailureKind.REDIRECT
@@ -250,14 +260,31 @@ def execute_offline_quote(
         if failure is FailureKind.UNAUTHORIZED:
             provider.revoke(scope)
         raise OfflineSessionError(failure)
-    provider.get(scope, now_ms=now_ms + response.elapsed_ms)
+    try:
+        received_lease = provider.get(scope, now_ms=now_ms + response.elapsed_ms)
+    except OfflineSessionError as exc:
+        if exc.kind is not FailureKind.CREDENTIAL_UNAVAILABLE:
+            raise
+        # The fake exchange already consumed a scripted response: not a pre-send failure.
+        raise OfflineSessionError(FailureKind.LEASE_INVALID_AFTER_EXCHANGE) from None
+    if received_lease is not lease:
+        raise OfflineSessionError(FailureKind.LEASE_INVALID_AFTER_EXCHANGE)
     if response.outcome is not FixtureOutcome.SUCCESS:
         raise OfflineSessionError(FailureKind.PROVIDER_UNVERIFIED)
+
+    # Import the exception type only after validation; never load the native extension eagerly.
+    from ktradelink._native import NativeCoreUnavailable
+
     try:
-        return decode_offline_quote_response(
+        result = decode_offline_quote_response(
             plan, http_status=response.http_status, json_text=response.json_text
         )
-    except ImportError:
-        raise OfflineSessionError(FailureKind.NATIVE_UNAVAILABLE) from None
+    except NativeCoreUnavailable:
+        decoder_failure = FailureKind.NATIVE_UNAVAILABLE
     except (TypeError, ValueError, RuntimeError):
-        raise OfflineSessionError(FailureKind.DECODER) from None
+        decoder_failure = FailureKind.DECODER
+    else:
+        return result
+    # Raise outside the except block so the discarded payload-derived exception
+    # is not retained in OfflineSessionError.__context__.
+    raise OfflineSessionError(decoder_failure)

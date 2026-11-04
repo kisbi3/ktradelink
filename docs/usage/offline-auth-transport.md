@@ -40,16 +40,24 @@ replaces a lease; old response scripts fail object-identity matching. `revoke()`
 removes one scope. `get()` rejects missing, future-issued and expired leases;
 expiry is exclusive. No cache is persisted and nothing auto-refreshes.
 
-Each response belongs to a whole request plan and one issued lease. Scripts are
-consumed once even on errors. Timeout is simulated elapsed_ms >= timeout_ms;
+Each response belongs to a whole request plan and one issued lease; the plan's
+broker/environment must match the lease scope. Scripts are consumed once even
+on errors. A missing lease **before** exchange yields CREDENTIAL_UNAVAILABLE,
+whereas a lease that becomes invalid **after** the scripted exchange yields
+LEASE_INVALID_AFTER_EXCHANGE. A post-exchange error never means "request not sent"
+and must not trigger a replay of a non-idempotent operation. This fake has no
+order support. Timeout is simulated elapsed_ms >= timeout_ms;
 the allowed 1..60,000 ms bound is a library policy, not a broker limit. TLS must
 be enabled in the policy, redirects disabled, retries zero. These flags do NOT
 implement TLS, network cancellation or elapsed-time measurement.
 
-401 invalidates the matching scope without replay. 403, 429, 5xx and redirects
-have distinct FailureKind values; no error body is reflected. Bodies are hidden
-from repr and UTF-8 bounded to 1,048,576 bytes (library limit). Native rejection
-becomes a static error with suppressed displayed cause. This is not secret-memory
+Only exact HTTP 200 can proceed; 204, 206 and other 2xx responses are rejected
+by this library-owned fake-quote policy. 401 invalidates the matching scope
+without replay. 403, 429, 5xx and redirects have distinct FailureKind values;
+no error body is reflected. Bodies are hidden from repr and UTF-8 bounded to
+1,048,576 bytes (library limit). Mapped decoder rejection becomes a static error
+with no retained exception context. A broken transitive native import propagates,
+rather than being disguised as a missing extension. This is not secret-memory
 erasure; Python callers/debuggers still have access to their fixture objects.
 
 ## Important gap: fixture assertion is not provider attestation

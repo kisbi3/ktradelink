@@ -22,6 +22,7 @@ from ktradelink._offline_session import (
     TransportPolicy,
     execute_offline_quote,
 )
+from ktradelink._native import NativeCoreUnavailable
 from ktradelink._request_plan import plan_ticker_request
 from ktradelink.models import Ticker
 
@@ -63,7 +64,7 @@ def test_six_broker_call_through_preserves_ticker_and_never_opens_socket(broker,
 
 @pytest.mark.parametrize("broker", BROKERS)
 @pytest.mark.parametrize("status,kind", [
-    (199, FailureKind.HTTP), (204, FailureKind.PROVIDER_UNVERIFIED),
+    (199, FailureKind.HTTP), (204, FailureKind.HTTP),
     (301, FailureKind.REDIRECT), (307, FailureKind.REDIRECT),
     (400, FailureKind.HTTP), (401, FailureKind.UNAUTHORIZED),
     (403, FailureKind.FORBIDDEN), (404, FailureKind.HTTP),
@@ -133,6 +134,11 @@ def test_response_binding_rejects_stale_or_unrelated_context(change):
             "kis", "000660" if change == "symbol" else "005930", venue="KRX",
             environment="paper" if change == "paper" else "live",
         )
+    if change == "paper":
+        with pytest.raises(OfflineSessionError) as caught:
+            FakeResponse(response_plan, response_lease, 200, "{}", FixtureOutcome.SUCCESS)
+        assert caught.value.kind is FailureKind.CONTEXT_MISMATCH
+        return
     response = FakeResponse(response_plan, response_lease, 200, "{}", FixtureOutcome.SUCCESS)
     transport = FakeTransport((response,))
     with pytest.raises(OfflineSessionError) as caught:
@@ -178,9 +184,32 @@ def test_simulated_deadline_boundary(elapsed, kind):
 def test_token_expiring_during_fake_exchange_is_not_accepted():
     plan, scope, provider, lease = setup_fake(lifetime_ms=5)
     response = FakeResponse(plan, lease, 200, "{}", FixtureOutcome.SUCCESS, elapsed_ms=4)
+    transport = FakeTransport((response,))
     with pytest.raises(OfflineSessionError) as caught:
-        execute_offline_quote(plan, scope, provider, FakeTransport((response,)), now_ms=11)
-    assert caught.value.kind is FailureKind.CREDENTIAL_UNAVAILABLE
+        execute_offline_quote(plan, scope, provider, transport, now_ms=11)
+    assert caught.value.kind is FailureKind.LEASE_INVALID_AFTER_EXCHANGE
+    assert transport.calls == 1
+    with pytest.raises(OfflineSessionError) as before_send:
+        provider.get(scope, now_ms=15)
+    assert before_send.value.kind is FailureKind.CREDENTIAL_UNAVAILABLE
+
+
+def test_lease_rotated_after_consumed_exchange_has_distinct_failure(monkeypatch):
+    plan, scope, provider, lease = setup_fake()
+    response = FakeResponse(plan, lease, 200, "{}", FixtureOutcome.SUCCESS)
+    transport = FakeTransport((response,))
+    original_exchange = FakeTransport.exchange
+
+    def exchange_then_rotate(self, request, issued_lease):
+        result = original_exchange(self, request, issued_lease)
+        provider.issue(scope, now_ms=11, lifetime_ms=100)
+        return result
+
+    monkeypatch.setattr(FakeTransport, "exchange", exchange_then_rotate)
+    with pytest.raises(OfflineSessionError) as caught:
+        execute_offline_quote(plan, scope, provider, transport, now_ms=11)
+    assert caught.value.kind is FailureKind.LEASE_INVALID_AFTER_EXCHANGE
+    assert transport.calls == 1
 
 
 @pytest.mark.parametrize("policy", [
@@ -236,8 +265,12 @@ def test_exact_utf8_boundary_and_frozen_records():
             setattr(value, key, 1)
 
 
-@pytest.mark.parametrize("error,kind", [(ValueError, FailureKind.DECODER),
-                                       (ImportError, FailureKind.NATIVE_UNAVAILABLE)])
+@pytest.mark.parametrize("error,kind", [
+    (ValueError, FailureKind.DECODER),
+    (TypeError, FailureKind.DECODER),
+    (RuntimeError, FailureKind.DECODER),
+    (NativeCoreUnavailable, FailureKind.NATIVE_UNAVAILABLE),
+])
 def test_decoder_exceptions_do_not_reflect_body_or_display_chain(error, kind, monkeypatch):
     plan, scope, provider, lease = setup_fake()
     marker = "SYNTHETIC_PAYLOAD_SENTINEL"
@@ -251,6 +284,80 @@ def test_decoder_exceptions_do_not_reflect_body_or_display_chain(error, kind, mo
         execute_offline_quote(plan, scope, provider, transport, now_ms=11)
     assert caught.value.kind is kind
     assert marker not in "".join(traceback.format_exception(caught.value))
+    assert caught.value.__context__ is None and caught.value.__cause__ is None
+
+
+@pytest.mark.parametrize("status", [201, 202, 204, 206, 299])
+@pytest.mark.parametrize("broker", BROKERS)
+def test_non_200_2xx_cannot_bypass_http_guard_even_with_success_fixture(
+    broker, status, monkeypatch
+):
+    plan, scope, provider, lease = setup_fake(broker)
+    response = FakeResponse(plan, lease, status, "{}", FixtureOutcome.SUCCESS)
+    transport = FakeTransport((response,))
+    monkeypatch.setattr(session, "decode_offline_quote_response", lambda *a, **k: pytest.fail())
+    with pytest.raises(OfflineSessionError) as caught:
+        execute_offline_quote(plan, scope, provider, transport, now_ms=11)
+    assert caught.value.kind is FailureKind.HTTP
+    assert transport.calls == 1
+
+
+@pytest.mark.parametrize("environment,broker", [("paper", "kis"), ("live", "kiwoom")])
+def test_response_rejects_cross_environment_or_broker_lease(environment, broker):
+    plan, _, _, _ = setup_fake()
+    wrong_scope = CredentialScope(broker, environment, 0)
+    lease = FakeCredentialProvider().issue(wrong_scope, now_ms=10, lifetime_ms=100)
+    with pytest.raises(OfflineSessionError) as caught:
+        FakeResponse(plan, lease, 200, "{}", FixtureOutcome.SUCCESS)
+    assert caught.value.kind is FailureKind.CONTEXT_MISMATCH
+
+
+def test_transport_rejects_lease_scope_mismatch_before_consuming_script():
+    plan, _, _, lease = setup_fake()
+    response = FakeResponse(plan, lease, 200, "{}", FixtureOutcome.SUCCESS)
+    unrelated = FakeCredentialProvider().issue(
+        CredentialScope("kiwoom", "live", 0), now_ms=10, lifetime_ms=100
+    )
+    transport = FakeTransport((response,))
+    with pytest.raises(OfflineSessionError) as caught:
+        transport.exchange(plan, unrelated)
+    assert caught.value.kind is FailureKind.CONTEXT_MISMATCH
+    assert transport.calls == 0
+
+
+def test_broken_native_transitive_import_is_not_mislabeled(monkeypatch):
+    from ktradelink import _native
+
+    plan, scope, provider, lease = setup_fake()
+    response = FakeResponse(plan, lease, 200, "{}", FixtureOutcome.SUCCESS)
+
+    def import_broken_extension(name):
+        assert name == "_ktradelink_native"
+        raise ModuleNotFoundError(
+            "SYNTHETIC_TRANSITIVE_FAILURE", name="synthetic_dependency_not_found"
+        )
+
+    monkeypatch.setattr(_native, "import_module", import_broken_extension)
+    with pytest.raises(ModuleNotFoundError) as caught:
+        execute_offline_quote(plan, scope, provider, FakeTransport((response,)), now_ms=11)
+    assert caught.value.name == "synthetic_dependency_not_found"
+
+
+def test_missing_native_extension_is_classified_only_as_native_unavailable(monkeypatch):
+    from ktradelink import _native
+
+    plan, scope, provider, lease = setup_fake()
+    response = FakeResponse(plan, lease, 200, "{}", FixtureOutcome.SUCCESS)
+
+    def missing_extension(name):
+        assert name == "_ktradelink_native"
+        raise ModuleNotFoundError("SYNTHETIC_MISSING_EXTENSION", name=name)
+
+    monkeypatch.setattr(_native, "import_module", missing_extension)
+    with pytest.raises(OfflineSessionError) as caught:
+        execute_offline_quote(plan, scope, provider, FakeTransport((response,)), now_ms=11)
+    assert caught.value.kind is FailureKind.NATIVE_UNAVAILABLE
+    assert caught.value.__context__ is None
 
 
 def test_only_concrete_fakes_allowed_and_script_exhaustion_is_explicit():

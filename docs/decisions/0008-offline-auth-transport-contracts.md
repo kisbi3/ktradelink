@@ -33,14 +33,23 @@ a separately reviewed design; the fake API is not a frozen public protocol.
 - A scripted response is tied to the entire request plan and the exact issued
   lease. A mismatched symbol/venue/origin/environment/identity/generation fails.
   All such metadata is fixture context, **not authenticated market provenance**.
+- Only exact HTTP 200 is accepted as a fake quote success; other 2xx responses
+  (including 204 and 206) are explicitly rejected. This is a library-owned
+  test policy, not an assertion about all broker success codes.
 - HTTP 401, 403, 429, 5xx, redirects and other failures have distinct static
   errors. A 401 invalidates only the matching fake scope. Nothing is replayed.
+- A credential missing/expired **before** exchange is distinct from a lease
+  invalidated or expired **after** a scripted response was consumed. The latter
+  uses LEASE_INVALID_AFTER_EXCHANGE, which must never be treated as "not sent"
+  for a future non-idempotent operation. This fake does not implement orders.
 - A separate explicit fixture outcome must say success before decoding.
   Missing/unverified outcome fails. This outcome is not a broker response field
   and must NEVER substitute for provider-specific status validation in live code.
 - Response bodies stay out of repr and error text. UTF-8 size is bounded before
-  native dispatch. Decoder errors are replaced with a static error without a
-  displayed exception chain. This is not memory erasure or a hostile-code sandbox.
+  native dispatch. Mapped decoder errors are replaced with a static error
+  without a retained exception context or displayed chain. Broken transitive
+  native imports are re-raised instead of being mislabeled as a missing module.
+  This is not memory erasure or a hostile-code sandbox.
 - The existing native decoder still parses JSON and constructs the same Ticker.
   It remains lazy and optional. No Python JSON decoder/fallback is introduced.
   No guessed prices, market labels, retrieved_at or exchange timestamps are added.
@@ -61,5 +70,6 @@ Synthetic fixtures cover all six brokers, scope separation, expiry/rotation,
 no retry, timeout, response mismatch, redacted errors, and lazy native import.
 Test the fake-to-native path and installed wheels, not just monkeypatched returns.
 Keep CI credential-free on Python 3.11-3.13 and Linux/Windows/macOS. Preserve
-semantic commits, pin the full-source review packet to HEAD, and require Gemini
-review plus explicit maintainer merge approval. No actual broker calls in CI.
+semantic commits, pin the full-source review packet to HEAD, and require
+independent fixed-SHA review (Claude Code under the current collaboration
+arrangement) plus explicit maintainer merge approval. No broker calls in CI.
