@@ -10,6 +10,7 @@ from decimal import Decimal
 import pytest
 
 from ktradelink import _offline_session as session
+from ktradelink._native import NativeCoreUnavailable
 from ktradelink._offline_session import (
     CredentialScope,
     FailureKind,
@@ -22,7 +23,6 @@ from ktradelink._offline_session import (
     TransportPolicy,
     execute_offline_quote,
 )
-from ktradelink._native import NativeCoreUnavailable
 from ktradelink._request_plan import plan_ticker_request
 from ktradelink.models import Ticker
 
