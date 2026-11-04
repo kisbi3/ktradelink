@@ -33,8 +33,10 @@ Pinned publisher repository: `953e5dbff123f437ab4d11a78a95191a685eb51f`.
 POST token JSON uses grant_type/appkey/secretkey. Its cache considers profile,
 credential identity and expiry. These observations motivate scope separation,
 NOT copying automatic refresh, source logging, defaults or credential storage.
-The [official quote example](https://github.com/Kiwoom-Securities/Kiwoom-REST-API/blob/main/examples/%EA%B5%AD%EB%82%B4%EC%A3%BC%EC%8B%9D/%EC%A2%85%EB%AA%A9%EC%A0%95%EB%B3%B4/get_domestic_stock_info.py)
-was also located in the publisher index (ka10001, /api/dostk/stkinfo).
+The [official quote example](https://github.com/Kiwoom-Securities/Kiwoom-REST-API/blob/953e5dbff123f437ab4d11a78a95191a685eb51f/examples/%EA%B5%AD%EB%82%B4%EC%A3%BC%EC%8B%9D/%EC%A2%85%EB%AA%A9%EC%A0%95%EB%B3%B4/get_domestic_stock_info.py)
+(blob `c39741c73f0f8bdbc47694de24abf3cbaaf1d402`) was confirmed at the same
+publisher commit (ka10001, /api/dostk/stkinfo). This pins the sample content,
+not the deployed API behavior.
 Signed prices, KRX/NXT/SOR symbol semantics and full status/continuation validation
 remain unverified by this change.
 

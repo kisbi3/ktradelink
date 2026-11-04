@@ -21,6 +21,9 @@ on:
       - "docs/decisions/0007*"
       - "docs/brokers/six-broker-quote-request-auth.md"
       - "docs/usage/offline-six-broker-request-plans.md"
+      - "docs/decisions/0008*"
+      - "docs/usage/offline-auth-transport.md"
+      - "docs/brokers/auth-transport-evidence-2026-11-03.md"
       - "tools/check_installed_models.py"
   pull_request:
     paths:
@@ -42,6 +45,9 @@ on:
       - "docs/decisions/0007*"
       - "docs/brokers/six-broker-quote-request-auth.md"
       - "docs/usage/offline-six-broker-request-plans.md"
+      - "docs/decisions/0008*"
+      - "docs/usage/offline-auth-transport.md"
+      - "docs/brokers/auth-transport-evidence-2026-11-03.md"
       - "tools/check_installed_models.py"
       - "docs/decisions/0005*"
       - "docs/usage/rust-core*"
