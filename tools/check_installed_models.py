@@ -7,6 +7,15 @@ from pathlib import Path
 from zoneinfo import ZoneInfo, reset_tzpath
 
 import ktradelink
+from ktradelink._offline_session import (
+    CredentialScope,
+    FailureKind,
+    FakeCredentialProvider,
+    FakeResponse,
+    FakeTransport,
+    OfflineSessionError,
+    execute_offline_quote,
+)
 from ktradelink._request_plan import authentication_requirements, plan_ticker_request
 from ktradelink.models import Candle, OrderBook, OrderBookLevel, Ticker
 
@@ -39,6 +48,19 @@ def main() -> None:
         assert not authentication_requirements(
             broker, environment="live"
         ).token_exchange_implemented
+        scope = CredentialScope(broker, "live", 0)
+        provider = FakeCredentialProvider()
+        lease = provider.issue(scope, now_ms=0, lifetime_ms=100)
+        transport = FakeTransport((FakeResponse(plan, lease, 403, "{}"),))
+        try:
+            execute_offline_quote(plan, scope, provider, transport, now_ms=1)
+        except OfflineSessionError as exc:
+            assert exc.kind is FailureKind.FORBIDDEN
+        else:
+            raise AssertionError("fake forbidden response accepted")
+        assert transport.calls == 1
+    assert "ktradelink._native" not in sys.modules
+    assert "_ktradelink_native" not in sys.modules
     print(f"Installed typed-model and offline request-plan checks passed: {installed}")
 
 

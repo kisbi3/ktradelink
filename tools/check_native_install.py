@@ -10,6 +10,16 @@ from pathlib import Path
 MISSING_CHECK = '''
 import ktradelink
 from decimal import Decimal
+from ktradelink._offline_session import (
+    CredentialScope,
+    FailureKind,
+    FakeCredentialProvider,
+    FakeResponse,
+    FakeTransport,
+    FixtureOutcome,
+    OfflineSessionError,
+    execute_offline_quote,
+)
 from ktradelink.models import Ticker
 from ktradelink._native import NativeCoreUnavailable, build_ticker, decode_ticker_candidate
 from ktradelink._request_plan import (
@@ -25,6 +35,16 @@ except NativeCoreUnavailable:
     pass
 else:
     raise AssertionError("offline native decoder unexpectedly available")
+scope = CredentialScope("kis", "live", 0)
+provider = FakeCredentialProvider()
+lease = provider.issue(scope, now_ms=0, lifetime_ms=100)
+transport = FakeTransport((FakeResponse(plan, lease, 200, "{}", FixtureOutcome.SUCCESS),))
+try:
+    execute_offline_quote(plan, scope, provider, transport, now_ms=1)
+except OfflineSessionError as exc:
+    assert exc.kind is FailureKind.NATIVE_UNAVAILABLE
+else:
+    raise AssertionError("fake session silently replaced missing Rust decoder")
 for operation in (
     lambda: build_ticker("005930", "KRX", "synthetic"),
     lambda: decode_ticker_candidate("kis", "005930", "KRX", "{}"),
@@ -45,6 +65,16 @@ import _ktradelink_native
 import ktradelink
 from ktradelink._native import build_ticker, core_version, decode_ticker_candidate
 from ktradelink._request_plan import decode_offline_quote_response, plan_ticker_request
+from ktradelink._offline_session import (
+    CredentialScope,
+    FailureKind,
+    FakeCredentialProvider,
+    FakeResponse,
+    FakeTransport,
+    FixtureOutcome,
+    OfflineSessionError,
+    execute_offline_quote,
+)
 from ktradelink.models import Ticker
 root = Path(sys.prefix).resolve()
 for module in (ktradelink, _ktradelink_native):
@@ -71,8 +101,17 @@ for broker, payload in examples.items():
     new_quote = decode_offline_quote_response(plan, http_status=200, json_text=payload)
     assert type(new_quote) is Ticker and new_quote == quote
     assert plan.transport_implemented is False
+    scope = CredentialScope(broker, "live", 0)
+    provider = FakeCredentialProvider()
+    lease = provider.issue(scope, now_ms=0, lifetime_ms=100)
+    response = FakeResponse(plan, lease, 200, payload, FixtureOutcome.SUCCESS)
+    transport = FakeTransport((response,))
+    session_quote = execute_offline_quote(plan, scope, provider, transport, now_ms=1)
+    assert type(session_quote) is Ticker and session_quote == quote
+    assert transport.calls == 1
 assert (Path(ktradelink.__file__).parent / "py.typed").is_file()
 print("Isolated native wheel -> six offline decoder candidates -> existing Ticker: passed")
+print("Isolated fake auth/transport -> six Rust decoders -> existing Ticker: passed")
 '''
 
 
