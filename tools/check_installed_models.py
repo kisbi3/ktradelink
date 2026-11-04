@@ -17,6 +17,12 @@ from ktradelink._offline_session import (
     execute_offline_quote,
 )
 from ktradelink._request_plan import authentication_requirements, plan_ticker_request
+from ktradelink._credential_runtime import (
+    CredentialIdentity, CredentialPair, InMemoryCredentialProvider,
+)
+from ktradelink._https_transport import (
+    HttpsTransport, TransportFailure, TransportError, build_token_request,
+)
 from ktradelink.models import Candle, OrderBook, OrderBookLevel, Ticker
 
 
@@ -59,6 +65,17 @@ def main() -> None:
         else:
             raise AssertionError("fake forbidden response accepted")
         assert transport.calls == 1
+    identity = CredentialIdentity("kis", "live", "installed-smoke")
+    explicit = InMemoryCredentialProvider()
+    explicit.put(identity, CredentialPair("SYNTHETIC_KEY", "SYNTHETIC_SECRET"))
+    request = build_token_request(identity, explicit)
+    assert "SYNTHETIC_SECRET" not in repr(request)
+    try:
+        HttpsTransport().send(request)
+    except TransportError as exc:
+        assert exc.kind is TransportFailure.NOT_ENABLED
+    else:
+        raise AssertionError("disabled HTTPS transport accidentally permitted network")
     assert "ktradelink._native" not in sys.modules
     assert "_ktradelink_native" not in sys.modules
     print(f"Installed typed-model and offline request-plan checks passed: {installed}")
