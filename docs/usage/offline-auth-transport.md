@@ -28,8 +28,8 @@ assert transport.calls == 1
 ```
 
 The environment string selects a request template only. No live or paper server
-is contacted. All six offline candidates can use this flow; LS is still the
-onboarding example, not actual t1102. Only the previously evidenced KIS/Kiwoom
+is contacted. All six offline candidates can use this flow; LS uses the
+published t1102 REST shape (ADR 0010). Only the previously evidenced KIS/Kiwoom
 paper templates are available. No native or Python model contract is changed.
 
 ## Synthetic state and failures

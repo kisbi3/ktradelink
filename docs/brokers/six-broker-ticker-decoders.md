@@ -17,15 +17,15 @@
 | --- | --- | --- | --- | --- | --- |
 | `kis` | [KIS domestic stock quote example](https://github.com/koreainvestment/open-trading-api/blob/main/examples_llm/domestic_stock/inquire_price/chk_inquire_price.py) (FHKST01010100) | `output` object | `stck_prpr` | `stck_oprc`, `stck_hgpr`, `stck_lwpr`, `acml_vol` | Event timestamp; KIS response may not specify confirmed venue for every TR |
 | `kiwoom` | [Kiwoom REST ka10001 publisher example](https://github.com/Kiwoom-Securities/Kiwoom-REST-API/blob/main/examples/%EA%B5%AD%EB%82%B4%EC%A3%BC%EC%8B%9D/%EC%A2%85%EB%AA%A9%EC%A0%95%EB%B3%B4/get_domestic_stock_info.py) | Root object | `cur_prc` | `open_pric`, `high_pric`, `low_pric`, `trde_qty`, optional `stk_cd` | **Signed price semantics** — reject signs until documented at field level |
-| `ls` | [Official LS onboarding `GET /stock/market-data` example](https://openapi.ls-sec.co.kr/howto-use) | **Flat onboarding demo only** | `price` | optional `shcode` if supplied | Does **NOT** establish actual `t1102OutBlock` wire envelope, depth, unit, time or volume |
+| `ls` | [LS API guide t1102 REST detail](https://openapi.ls-sec.co.kr/apiservice) (retrieved 2026-11-05, see [ledger](live-auth-transport-gates-2026-11-05.md)) | `t1102OutBlock` object; **required** root `rsp_cd` `00000` and echoed `shcode` | `price` (unsigned; direction in `sign`) | `volume` | `open`/`high`/`low` are `0` before the first trade in the publisher example, so they are **not mapped**; no venue field in the response |
 | `db` | [Official DB domestic quote Python sample](https://openapi.dbsec.co.kr/testbed-sample), `PRICE` | `Out` object and `rsp_cd` success code `00000` | `Prpr` | `Oprc`, `Hprc`, `Lprc` | `Sdpr` is a **reference/base price**, not proven previous session close; no volume in publisher example |
 | `toss` | [Server-owned canonical OpenAPI 3.1 v1.2.28](https://openapi.tossinvest.com/openapi-docs/latest/openapi.json), `GET /api/v1/prices` | `result` array, match **exact requested symbol**, `currency=KRW` | `lastPrice` | `symbol`, `currency` | PriceResponse has **no volume/OHLC**; `timestamp` is ISO offset text; conversion deferred until semantics/coverage verified |
 | `meritz` | [Official current-price Python sample](https://openapi.imeritz.com/samplecode-py), `GET /market/v1/prices` | `data` object | `stck_prpr` | `oprc`, `hprc`, `lprc`, `acml_vol` | Native event clock, `previous_close`, market-wide aggregation, validated response-code taxonomy beyond published example |
 
 The six **documented candidate** profiles do not mean six production-ready
-adapters. LS is specifically **onboarding-demo-only**. A production LS `t1102`
-profile requires verifying the official TR-specific response block. Unverified
-endpoints must never be claimed as working.
+adapters. LS now follows the published t1102 REST block (ADR 0010), but its
+gateway behaviour is still unverified. Unverified endpoints must never be
+claimed as working.
 
 ## Meritz status-code evidence and endpoint-specific guard
 
@@ -68,9 +68,9 @@ permission to ignore actual HTTP or provider error status.
 - The upper input-size bound is inclusive: 1,048,576 UTF-8 bytes
   can decode; 1,048,577 bytes rejects before JSON parsing. This
   is an application safety limit, NOT a broker publisher limit.
-- LS onboarding demo price accepts an unsigned JSON integer or
-  unsigned fixed-decimal string; a negative JSON integer fails.
-  This still does not describe real LS t1102OutBlock semantics.
+- LS t1102 `price` accepts an unsigned JSON integer or unsigned
+  fixed-decimal string; a negative JSON integer fails. The flat onboarding
+  demo shape is no longer accepted.
 ## Decoder semantics and provenance policy
 
 1. **The caller explicitly supplies** `symbol` and `venue="KRX"`; the offline
@@ -117,8 +117,9 @@ permission to ignore actual HTTP or provider error status.
 - Kiwoom: verify the *native* `cur_prc` sign convention, market-qualified
   `stk_cd`, volume meaning and exchange/session coverage before allowing
   signed prices; do not apply unconditional absolute value.
-- LS: fetch publisher's current **t1102 TR output block** and verify its real
-  wrapper; onboarding demo is **not** sufficient for real-t1102 adapters.
+- LS: the t1102 output block is now documented (ADR 0010); verify gateway
+  acceptance, `rsp_cd` universe, the meaning of `0` OHLC values and NXT/
+  integrated (`exchgubun` N/U) semantics before any wider support.
 - DB: verify `rsp_cd` universe, market-specific response semantics,
   reference/base vs closing price and daily volume availability.
 - Toss: confirm whether `GET /api/v1/prices` for Korean symbols is KRX-only
