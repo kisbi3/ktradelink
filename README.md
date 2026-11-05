@@ -6,9 +6,14 @@ KTradeLink is an open-source, Python-native project to provide one consistent
 interface to the Open APIs of Korean securities brokers. It takes inspiration
 from the [CCXT](https://github.com/ccxt/ccxt) unified API approach.
 
-> **Status: pre-alpha / foundation only.** The package is importable, but no
-> broker adapters, market-data methods, or trading operations are implemented.
-> Example broker calls described in design discussions are not functional yet.
+> **Status: pre-alpha.** One experimental market-data call exists:
+> `ktradelink.connect(...).fetch_ticker(symbol)` for KIS, Kiwoom and LS
+> (KRX only). It is built from publisher documentation and tested only
+> against mocked HTTPS; it has **never been verified against a live or paper
+> gateway** (state `documented_candidate`, not `supported`). Network access is
+> off unless you opt in explicitly. No account, order or streaming operations
+> exist. See [the usage guide](docs/usage/public-fetch-ticker.md) and
+> [ADR 0013](docs/decisions/0013-public-fetch-ticker-surface.md).
 
 ## Mission
 
