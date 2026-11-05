@@ -10,9 +10,13 @@ are historical evidence, not current instructions.
 - **ChatGPT and Claude Code:** may implement and test work on distinct topic
   branches, draft specifications and PRs, and independently review the other's
   fixed-commit changes. Assign the *owner of each task* in its Issue/PR first.
-- **Independent review:** currently Claude Code reviews ChatGPT-authored PRs;
-  ChatGPT may review Claude-authored PRs. Never treat author self-review as
-  independent. Gemini Web is paused until the maintainer explicitly resumes it.
+- **Independent review:** every PR needs an independent verdict from an agent
+  or person other than its author before merge: Claude Code reviews
+  ChatGPT-authored PRs and ChatGPT reviews Claude-authored PRs. If a PR
+  contains commits from both, the reviewer must not have authored the reviewed
+  delta. Never treat author self-review as independent. Only the maintainer
+  can waive this, by an explicit comment on that PR. Gemini Web is paused
+  until the maintainer explicitly resumes it.
 - **Maintainer:** chooses architecture and work priorities and explicitly
   approves every merge. Use a normal **Merge Commit** to preserve semantic
   commits; no automatic merges or review-derived merge approval.
@@ -25,7 +29,8 @@ are historical evidence, not current instructions.
    applicable ADRs, the Issue, related open PRs and any handoff comments.
 2. Confirm the task owner, base SHA, branch, scope, overlapping edits and
    required evidence. If another agent owns the same branch, **do not push**
-   without a documented transfer or an explicit agreement.
+   unless the maintainer records an ownership transfer in the Issue/PR.
+   Another agent's comment alone is not a transfer.
 3. Create a topic branch from current `main`. Do not push feature work to
    `main` or force-push a shared/reviewed branch.
 4. If a branch/PR has moved since the last review, compare exact SHAs instead
@@ -44,11 +49,16 @@ are historical evidence, not current instructions.
    severity, limitations, and Approved/Changes requested. Record in a PR
    comment (preferred), not in chat alone.
 5. If source, tests, CI or specifications change after review, independently
-   inspect the delta. **Only** commits changing exclusively `docs/reviews/`
-   may use the review-record exception, after verifying the changed paths.
-6. Merge only after maintainer approval using a normal Merge Commit with the
-   expected reviewed HEAD. Verify both parents, preserved topic commits,
-   current `main`, Issue state and *new main-push CI*.
+   inspect the delta. The review-record exception applies **only** when every
+   path in `git diff --name-only <reviewed-sha>..HEAD` is under
+   `docs/reviews/`; see [`docs/reviews/README.md`](docs/reviews/README.md).
+6. Merge only after an independent **Approved** verdict pinned to the merge
+   HEAD (or a recorded maintainer waiver) and explicit maintainer approval,
+   using a normal Merge Commit with that expected HEAD. Verify both parents,
+   preserved topic commits, current `main`, Issue state and *new main-push
+   CI*. The agent that performed the merge records this verification on the
+   PR; if main-push CI fails, open or update an Issue and tell the
+   maintainer before starting other work.
 7. Put work handoffs in the relevant Issue/PR comments as described in
    [`docs/contributing/agent-handoff.md`](docs/contributing/agent-handoff.md).
    Don't maintain a continuously edited progress file or copy entire chats.
@@ -61,20 +71,28 @@ are historical evidence, not current instructions.
   no unapproved dict/JSON public serialization surface.
 - Apply common capabilities across KIS, Kiwoom REST, LS, DB, Toss and Meritz
   where authoritative evidence exists. Keep Shinhan seven-broker comparison
-  separate. Never fabricate an endpoint, entitlement, response status,
-  rate limit, venue, timestamp, or redistribution right.
+  separate. Never fabricate an endpoint, payload field, entitlement, response
+  status, error code, rate limit, venue, timestamp, or redistribution right.
+- Cite official broker docs for every broker mapping by URL, with a pinned
+  commit/blob where available, otherwise the retrieval date and any visible
+  publisher revision. Treat README examples as proposals until backed by
+  executable tests.
 - Track whether evidence is publisher example, offline code, paper verified,
   live verified, or actually publicly supported. No silent LIVE/PAPER fallback,
   venue merging, price-sign erasure, timestamp guesses or default success for
   missing upstream status fields.
-- Never place credentials, tokens, real account numbers or device MAC values
-  in Git, issues, logs, errors, screenshots, fixtures or review material.
+- Never place credentials, tokens, account identifiers (account numbers,
+  broker user IDs) or device MAC values in Git, issues, logs, errors,
+  screenshots, fixtures or review material.
   Publisher examples that disable TLS verification or put secrets in URLs
   are **not** safe implementation patterns.
 - Real authentication, network/account access and orders each require an
-  explicit separate authorization. No live calls in CI, no silent secret
-  discovery, and no automatic retry of non-idempotent operations with an
-  unknown send outcome.
+  explicit separate authorization. No live calls in CI and no silent secret
+  discovery.
+- Never automatically retry orders or other non-idempotent operations unless
+  a proven duplicate-order safeguard exists. An UNKNOWN send outcome, a
+  timeout, or an error response (including HTTP 5xx) is never evidence that
+  a retry is safe: the broker may already have accepted the request.
 
 ## PR review checklist
 
