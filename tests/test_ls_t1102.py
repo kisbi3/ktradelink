@@ -131,7 +131,8 @@ def test_quote_send_is_one_attempt_to_the_t1102_path(monkeypatch):
     conn.getresponse.return_value.length = None
     factory = MagicMock(return_value=conn)
     monkeypatch.setattr(http.client, "HTTPSConnection", factory)
-    HttpsTransport(network_enabled=True, clock=lambda: 2).send(req)
+    monkeypatch.setattr("ktradelink._https_transport._wall_clock_ms", lambda: 2)
+    HttpsTransport(network_enabled=True).send(req)
     factory.assert_called_once()
     assert factory.call_args.args[0] == "openapi.ls-sec.co.kr"
     assert factory.call_args.kwargs["port"] == 8080
