@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from ktradelink._credential_runtime import (
+    CredentialError,
     CredentialIdentity,
     CredentialPair,
     InMemoryCredentialProvider,
@@ -37,7 +38,7 @@ def test_token_example_parses_exact_publisher_expiry_and_scoped_cache(broker,fie
     expected=int(datetime(2027,1,2,12,1,3,tzinfo=KST).timestamp()*1000)
     assert issued.expires_at_ms==expected
     assert cache.get(provider,identity,now_ms=expected-1) is issued
-    with pytest.raises(Exception):
+    with pytest.raises(CredentialError):
         cache.get(provider,identity,now_ms=expected)
     assert 'SYNTHETIC_KIS' not in repr(issued) and 'SYNTHETIC_KIWOOM' not in repr(issued)
 
@@ -58,7 +59,8 @@ def test_invalid_response_never_cache_or_expose_body(broker,fields):
     assert error.value.kind is TokenFailure.INVALID_RESPONSE
     assert error.value.__context__ is None
     assert 'SYNTHETIC' not in str(error.value)
-    with pytest.raises(Exception):cache.get(p,identity,now_ms=0)
+    with pytest.raises(CredentialError):
+        cache.get(p,identity,now_ms=0)
 
 
 def test_stale_credentials_cannot_bind_token_returned_after_rotation():

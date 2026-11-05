@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 from ktradelink._credential_runtime import (
+    CredentialError,
     CredentialIdentity,
     CredentialPair,
     InMemoryCredentialProvider,
@@ -69,7 +70,7 @@ def test_quote_request_requires_current_token_and_matching_environment(broker,en
     with pytest.raises(TransportError):
         build_quote_request(plan,CredentialIdentity(broker, "paper" if environment=="live" else "live", "test"),p,tokens,now_ms=2)
     p.put(ident,CredentialPair("ROTATED", "ROTATED"))
-    with pytest.raises(Exception):
+    with pytest.raises(CredentialError):
         build_quote_request(plan,ident,p,tokens,now_ms=2)
 
 
@@ -97,21 +98,29 @@ class _StubResponse:
 class _StubConnection:
     instances=[]
     def __init__(self, host,port,timeout,context):
-        self.host=host;self.port=port;self.timeout=timeout;self.context=context
-        self.calls=[]; self.closed=False
+        self.host=host
+        self.port=port
+        self.timeout=timeout
+        self.context=context
+        self.calls=[]
+        self.closed=False
         self.behavior=SimpleNamespace(connect=None,write=None,headers=None,response=_StubResponse())
         self.__class__.instances.append(self)
     def connect(self):
         self.calls.append('connect')
-        if self.behavior.connect:raise self.behavior.connect
+        if self.behavior.connect:
+            raise self.behavior.connect
     def request(self,method,target,body=None,headers=None):
         self.calls.append(('request',method,target,body,headers))
-        if self.behavior.write:raise self.behavior.write
+        if self.behavior.write:
+            raise self.behavior.write
     def getresponse(self):
         self.calls.append('getresponse')
-        if self.behavior.headers:raise self.behavior.headers
+        if self.behavior.headers:
+            raise self.behavior.headers
         return self.behavior.response
-    def close(self):self.closed=True
+    def close(self):
+        self.closed=True
 
 
 def fake_network(monkeypatch):
@@ -176,8 +185,10 @@ def test_network_phase_classifies_send_ambiguity_without_leak(phase,kind,state,m
     old=_StubConnection.__init__
     def setup_stub(self,*args,**kwargs):
         old(self,*args,**kwargs)
-        if phase=='read':self.behavior.response=_StubResponse(read_failure=True)
-        else:setattr(self.behavior,phase,ValueError('SYNTHETIC-SECRET'))
+        if phase == 'read':
+            self.behavior.response = _StubResponse(read_failure=True)
+        else:
+            setattr(self.behavior, phase, ValueError('SYNTHETIC-SECRET'))
     monkeypatch.setattr(_StubConnection,'__init__',setup_stub)
     with pytest.raises(TransportError) as exc:
         HttpsTransport(network_enabled=True).send(req)
@@ -188,11 +199,13 @@ def test_network_phase_classifies_send_ambiguity_without_leak(phase,kind,state,m
 
 
 def test_explicit_tls_failure_does_not_degrade_to_no_verification(monkeypatch):
-    p,ident,_=setup();req=build_token_request(ident,p)
+    p,ident,_=setup()
+    req=build_token_request(ident,p)
     instances=fake_network(monkeypatch)
     old=_StubConnection.__init__
     def setup_stub(self,*args,**kwargs):
-        old(self,*args,**kwargs);self.behavior.connect=ssl.SSLError('SYNTHETIC-SECRET')
+        old(self,*args,**kwargs)
+        self.behavior.connect=ssl.SSLError('SYNTHETIC-SECRET')
     monkeypatch.setattr(_StubConnection,'__init__',setup_stub)
     with pytest.raises(TransportError) as exc:
         HttpsTransport(network_enabled=True).send(req)
@@ -201,7 +214,8 @@ def test_explicit_tls_failure_does_not_degrade_to_no_verification(monkeypatch):
 
 
 def test_response_size_cap_and_encoding_are_static(monkeypatch):
-    p,ident,_=setup();req=build_token_request(ident,p)
+    p,ident,_=setup()
+    req=build_token_request(ident,p)
     fake_network(monkeypatch)
     old=_StubConnection.__init__
     def setup_stub(self,*args,**kwargs):
@@ -214,7 +228,8 @@ def test_response_size_cap_and_encoding_are_static(monkeypatch):
 
 
 def test_no_arbitrary_host_or_path_from_a_forged_plan():
-    p,ident,_=setup();req=build_token_request(ident,p)
+    p,ident,_=setup()
+    req=build_token_request(ident,p)
     with pytest.raises(TransportError):
         WireRequest(req.source,'POST','https://another.example',req.path,(),req.headers,req.body,'token',credential_snapshot=req.credential_snapshot)
     with pytest.raises(TransportError):
@@ -229,7 +244,8 @@ def test_bad_timeouts_and_network_flags_rejected(ms):
 
 def test_proxy_environment_does_not_provide_destinations_or_credential(monkeypatch):
     monkeypatch.setenv('HTTPS_PROXY','https://SYNTHETIC-SECRET@somewhere.invalid')
-    p,ident,_=setup();req=build_token_request(ident,p)
+    p,ident,_=setup()
+    req=build_token_request(ident,p)
     fake_network(monkeypatch)
     result=HttpsTransport(network_enabled=True).send(req)
     assert result.status==200

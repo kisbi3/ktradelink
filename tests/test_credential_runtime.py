@@ -140,7 +140,8 @@ def test_cross_provider_snapshot_and_stale_revision_refused():
 
 
 def test_bearer_lease_direct_construction_has_no_leak_or_invalid_clock():
-    p=InMemoryCredentialProvider(); snap=p.put(identity(),CredentialPair('x','y'))
+    p = InMemoryCredentialProvider()
+    snap = p.put(identity(), CredentialPair('x', 'y'))
     with pytest.raises(CredentialError):
         BearerLease(snap,'bad\nheader',100)
     with pytest.raises(CredentialError):
