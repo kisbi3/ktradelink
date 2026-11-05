@@ -26,6 +26,7 @@ from ktradelink._credential_runtime import (
     InMemoryCredentialProvider,
     InMemoryTokenCache,
 )
+from ktradelink._diagnostics import GatewayStatus, gateway_status
 from ktradelink._request_plan import (
     AuthRequirements,
     QuoteRequestPlan,
@@ -64,11 +65,19 @@ class TransportFailure(Enum):
 
 
 class TransportError(RuntimeError):
-    """Only static classifications; no URL, headers, body, or origin exception."""
+    """Only static classifications; no URL, headers, body, or origin exception.
 
-    def __init__(self, kind: TransportFailure, delivery: DeliveryState):
+    ``diagnostic`` is ``None`` unless the sender opted in with
+    ``collect_diagnostics=True`` and an HTTP error response carried a status
+    envelope. It holds only the sanitised, redacted code and message from
+    ``_diagnostics.gateway_status`` and never appears in ``str``/``repr``.
+    """
+
+    def __init__(self, kind: TransportFailure, delivery: DeliveryState,
+                 diagnostic: GatewayStatus | None = None):
         self.kind = kind
         self.delivery = delivery
+        self.diagnostic = diagnostic
         super().__init__(kind.value)
 
 
@@ -360,6 +369,24 @@ def _token_send_attestation(response: object) -> _TokenSendAttestation | None:
         return _TOKEN_ATTESTATIONS.get(response)
 
 
+def _error_diagnostic(response: object, request: WireRequest) -> GatewayStatus | None:
+    """Redacted status envelope of an HTTP error body; the body is discarded."""
+    try:
+        body = response.read(MAX_RESPONSE_BYTES + 1)
+    except Exception:
+        return None
+    if type(body) is not bytes or len(body) > MAX_RESPONSE_BYTES:
+        return None
+    pair = request.credential_snapshot.pair
+    secrets = [pair.client_key, pair.client_secret]
+    if request.bearer_lease is not None:
+        secrets.append(request.bearer_lease.access_token)
+    try:
+        return gateway_status(body, redact=secrets)
+    except Exception:
+        return None
+
+
 def _wall_clock_ms() -> int:
     """The only send-time clock. Tests may monkeypatch this module function;
     there is deliberately no constructor or per-call clock parameter, so a
@@ -399,16 +426,22 @@ class HttpsTransport:
     flight in this process; a second concurrent one fails ``TOKEN_IN_FLIGHT``
     before connecting. A received token response is attested with its send
     order and the clock reading taken just before the write.
+
+    With ``collect_diagnostics=True`` (default off), an HTTP error response
+    body is read within the usual bound only to extract a redacted status
+    envelope into ``TransportError.diagnostic``; the body is then discarded.
     """
 
-    __slots__ = ("_enabled", "_timeout_ms")
+    __slots__ = ("_enabled", "_timeout_ms", "_diagnostics")
 
-    def __init__(self, *, network_enabled: bool = False, timeout_ms: int = 5_000):
+    def __init__(self, *, network_enabled: bool = False, timeout_ms: int = 5_000,
+                 collect_diagnostics: bool = False):
         if (type(network_enabled) is not bool or type(timeout_ms) is not int
-                or not 1 <= timeout_ms <= 60_000):
+                or not 1 <= timeout_ms <= 60_000 or type(collect_diagnostics) is not bool):
             _reject(TransportFailure.INVALID_REQUEST)
         self._enabled = network_enabled
         self._timeout_ms = timeout_ms
+        self._diagnostics = collect_diagnostics
 
     @staticmethod
     def _now_ms() -> int | None:
@@ -459,6 +492,7 @@ class HttpsTransport:
         response_status: int | None = None
         response_body: bytes | None = None
         before_write_ms: int | None = None
+        diagnostic: GatewayStatus | None = None
         failure: TransportFailure | None = None
         state = DeliveryState.NOT_SENT
         try:
@@ -511,6 +545,8 @@ class HttpsTransport:
                     failure = TransportFailure.RESPONSE
                 else:
                     failure = _http_kind(response_status)
+                    if failure is not None and self._diagnostics:
+                        diagnostic = _error_diagnostic(response, request)
 
             if failure is None:
                 try:
@@ -542,7 +578,7 @@ class HttpsTransport:
         # Outside except handlers: prevent original URL/header/payload exceptions
         # from being retained by the public error via __context__.
         if failure is not None:
-            raise TransportError(failure, state)
+            raise TransportError(failure, state, diagnostic)
         assert response_status is not None and response_body is not None
         received = WireResponse(request, response_status, response_body)
         if sequence is not None:

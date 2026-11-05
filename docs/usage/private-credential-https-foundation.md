@@ -69,6 +69,12 @@ fails with `TOKEN_IN_FLIGHT` before connecting. Nothing coordinates across
 processes: two processes sharing an app key can still invalidate each
 other's tokens.
 
+For a first opt-in contact with LS, use `tools/live_smoke_ls.py`
+([guide](live-smoke-ls.md), ADR 0012). It enables `collect_diagnostics=True`,
+which puts a redacted gateway status code and message into
+`TransportError.diagnostic` for HTTP error responses. That setting is off by
+default.
+
 A production real HTTPS client would need a **separate reviewed authorization**
 and explicit opt-in. Even then, only three broker token request/response candidates
 are currently encoded from publisher evidence; their real/paper acceptance is
