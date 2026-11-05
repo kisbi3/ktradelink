@@ -101,8 +101,9 @@ def _checked_symbol(broker: str, symbol: str) -> str:
 def authentication_requirements(broker: str, *, environment: str) -> AuthRequirements:
     """Describe six provider-specific auth requirements without ANY secrets.
 
-    This does not request a token. DB's provider sample sends credentials in
-    URL query and disables TLS verification; DO NOT replicate that flow.
+    This does not request a token. DB's older testbed sample sends credentials
+    in the URL query and disables TLS verification; DO NOT replicate that flow.
+    DB's API guide token detail and its official SDK use a form body instead.
     """
     origin = _origin(broker, environment)
 
@@ -125,8 +126,10 @@ def authentication_requirements(broker: str, *, environment: str) -> AuthRequire
         header_names = ("authorization",)
         scope = "oob"
     elif broker == "db":
+        # API guide token detail (form content type) and the official SDK at
+        # 564b5100 (dbsec_sdk/auth.py): form body, TLS verification on.
         token_path = "/oauth2/token"
-        request_format = "unsafe_query_sample_only"
+        request_format = "form"
         names = ("appkey", "appsecretkey")
         header_names = ("authorization",)
         scope = "oob"
@@ -208,15 +211,21 @@ def plan_ticker_request(
             separators=(",", ":"),
         )
     elif broker == "db":
+        # DB API guide PRICE detail and the official SDK example at 564b5100
+        # (retrieved 2026-11-05; see ADR 0015). For J (KRX) the code is the
+        # bare six digits; the older testbed's "A" prefix is not used. NXT and
+        # integrated quotes (NJ/UJ with N-/U- codes) are not offered. cont_yn
+        # "N" means no continuation. mac_address is for partner apps only
+        # (individuals must not set it); partner use is unsupported.
         method = "POST"
         path = "/api/v1/quote/kr-stock/inquiry/price"
         public_headers = (
             ("content-type", "application/json; charset=utf-8"),
-            ("cont_yn", ""),
+            ("cont_yn", "N"),
             ("cont_key", ""),
         )
         json_body = json.dumps(
-            {"In": {"InputCondMrktDivCode": "J", "InputIscd1": "A" + code}},
+            {"In": {"InputCondMrktDivCode": "J", "InputIscd1": code}},
             separators=(",", ":"),
         )
     elif broker == "toss":

@@ -66,7 +66,7 @@ broker-side exchange route.
 | KIS | GET + KRX `J` + `fid_input_iscd`, `tr_id` | Bearer plus `appkey` / `appsecret` |
 | Kiwoom | POST JSON `stk_cd`, `api-id` | Bearer, separate real/paper host labels |
 | LS | POST t1102 `t1102InBlock` (`shcode`, `exchgubun=K`), `tr_cd` | Bearer; t1102 from the publisher API guide, gateway unverified |
-| DB | POST nested `In` with `A`-prefixed code | Bearer; official token sample is **unsafe**, do not replicate |
+| DB | POST nested `In` (`InputCondMrktDivCode=J`, bare six-digit `InputIscd1`), `cont_yn=N` | Bearer; form token body from the API guide and official SDK (ADR 0015); the testbed's URL-query sample is **unsafe**, do not replicate |
 | Toss | GET `symbols` query | Bearer, **NO account header** for public market quote |
 | Meritz | GET `mrkt_div_code=J`, `iscd` | Bearer plus required `mac_address` |
 
@@ -109,10 +109,12 @@ never logged or inserted into `Ticker.info`.
   `Ticker` value model do not automatically become valid provider query
   symbols. Here only Toss's evidenced six-character alphanumeric style is
   accepted; all five others use the conservative six-ASCII-digit example.
-- DB's official token sample includes URL-query credential fields and
-  disables TLS validation. It is intentionally not an implemented token
-  exchange path. The future credential provider must establish a safe,
-  verified, TLS-enforced contract or report DB token setup unsupported.
+- DB's older testbed token sample includes URL-query credential fields and
+  disables TLS validation. It is never copied. The API guide token detail and
+  the official SDK at a pinned commit send a form body with TLS verification
+  on; that is the only DB token shape the private transport builds (ADR 0015).
+  The testbed's `A`-prefixed quote code was also replaced by the guide's bare
+  six-digit code.
 - Meritz's mandatory `mac_address` header is a **requirement name only**.
   We never call `uuid.getnode` or probe the system to collect it.
 - A fake successful HTTP status does not prove the broker's API-level
