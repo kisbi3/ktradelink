@@ -10,6 +10,7 @@ import http.client
 import json
 import ssl
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from urllib.parse import urlencode, urlsplit
@@ -309,6 +310,10 @@ def _http_kind(status: int) -> TransportFailure | None:
     return TransportFailure.HTTP
 
 
+def _wall_clock_ms() -> int:
+    return time.time_ns() // 1_000_000
+
+
 def _binding_failure(request: WireRequest, now_ms: int) -> TransportFailure | None:
     snapshot = request.credential_snapshot
     provider = snapshot.owner
@@ -332,21 +337,39 @@ class HttpsTransport:
     Uses http.client directly: it does not read HTTP(S)_PROXY, copy environment
     credentials, follow redirects, keep a cookie jar or reuse connections.
     Never call with real keys without the maintainer's separate live approval.
+
+    ``clock`` (epoch milliseconds) is a construction-time test seam; it is read
+    again after the TLS handshake, so an advancing clock still detects expiry
+    during a slow handshake. There is deliberately no per-call clock override.
     """
 
-    __slots__ = ("_enabled", "_timeout_ms")
+    __slots__ = ("_clock", "_enabled", "_timeout_ms")
 
-    def __init__(self, *, network_enabled: bool = False, timeout_ms: int = 5_000):
+    def __init__(
+        self, *, network_enabled: bool = False, timeout_ms: int = 5_000,
+        clock: Callable[[], int] | None = None,
+    ):
         if (type(network_enabled) is not bool or type(timeout_ms) is not int
-                or not 1 <= timeout_ms <= 60_000):
+                or not 1 <= timeout_ms <= 60_000
+                or (clock is not None and not callable(clock))):
             _reject(TransportFailure.INVALID_REQUEST)
         self._enabled = network_enabled
         self._timeout_ms = timeout_ms
+        self._clock = _wall_clock_ms if clock is None else clock
+
+    def _now_ms(self) -> int | None:
+        try:
+            value = self._clock()
+        except Exception:
+            return None
+        if type(value) is not int or value < 0:
+            return None
+        return value
 
     def __repr__(self) -> str:
         return "HttpsTransport(<redacted>)"
 
-    def send(self, request: WireRequest, *, now_ms: int | None = None) -> WireResponse:
+    def send(self, request: WireRequest) -> WireResponse:
         """One HTTPS attempt; no reconnect, refresh, retry, or downstream decode."""
         if type(request) is not WireRequest:
             _reject(TransportFailure.INVALID_REQUEST)
@@ -354,10 +377,8 @@ class HttpsTransport:
         request.__post_init__()
         if not self._enabled:
             _reject(TransportFailure.NOT_ENABLED)
-        injected_clock = now_ms is not None
+        now_ms = self._now_ms()
         if now_ms is None:
-            now_ms = time.time_ns() // 1_000_000
-        if type(now_ms) is not int or now_ms < 0:
             _reject(TransportFailure.INVALID_REQUEST)
         binding_failure = _binding_failure(request, now_ms)
         if binding_failure is not None:
@@ -394,8 +415,11 @@ class HttpsTransport:
 
             if failure is None:
                 # A slow handshake must not make a revoked/expired lease usable.
-                before_write_ms = now_ms if injected_clock else time.time_ns() // 1_000_000
-                failure = _binding_failure(request, before_write_ms)
+                before_write_ms = self._now_ms()
+                if before_write_ms is None:
+                    failure = TransportFailure.INVALID_REQUEST
+                else:
+                    failure = _binding_failure(request, before_write_ms)
             if failure is None:
                 state = DeliveryState.UNKNOWN  # any write failure may be partial
                 try:
@@ -423,10 +447,17 @@ class HttpsTransport:
             if failure is None:
                 try:
                     response_body = response.read(MAX_RESPONSE_BYTES + 1)
+                    # read(amt) does not raise IncompleteRead when the peer
+                    # closes before the declared Content-Length; http.client
+                    # leaves the unread remainder in ``length`` (None when the
+                    # body is chunked or close-delimited).
+                    remaining = getattr(response, "length", None)
                     if type(response_body) is not bytes:
                         failure = TransportFailure.READ
                     elif len(response_body) > MAX_RESPONSE_BYTES:
                         failure = TransportFailure.OVERSIZED
+                    elif remaining is not None and (type(remaining) is not int or remaining != 0):
+                        failure = TransportFailure.READ
                 except Exception:
                     failure = TransportFailure.READ
         finally:

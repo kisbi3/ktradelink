@@ -45,8 +45,12 @@ Wire headers and body cannot override the canonical builder's request. A
 prepared request is rechecked against current credentials and, for quotes,
 the exact current token immediately before connect and HTTP write. Rotation,
 revocation or expiration requires rebuilding it; there is no automatic refresh.
-The default send-time clock is UTC epoch milliseconds; `now_ms` is an explicit
-test clock override, not permission to extend the life of an actual token.
+The send-time clock is UTC epoch milliseconds. Tests may pass a `clock`
+callable when constructing `HttpsTransport`; `send()` has no per-call time
+override. The clock is read before connecting and again after the TLS
+handshake, so expiry during a slow handshake is still detected. An invalid
+clock reading fails with `INVALID_REQUEST` before anything is written. A test
+clock is not permission to extend the life of an actual token.
 Concurrent modification across threads/processes is not supported or attested.
 
 A production real HTTPS client would need a **separate reviewed authorization**

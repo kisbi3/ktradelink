@@ -58,6 +58,7 @@ def fake_network(monkeypatch):
     conn = MagicMock()
     conn.getresponse.return_value.status = 200
     conn.getresponse.return_value.read.return_value = b"{}"
+    conn.getresponse.return_value.length = None
     factory = MagicMock(return_value=conn)
     monkeypatch.setattr(http.client, "HTTPSConnection", factory)
     return factory, conn
@@ -93,7 +94,7 @@ def test_stale_credentials_never_open_connection(broker, purpose, change, monkey
         provider.clear(identity)
     factory = no_network(monkeypatch)
     with pytest.raises(TransportError) as caught:
-        HttpsTransport(network_enabled=True).send(req, now_ms=2)
+        HttpsTransport(network_enabled=True, clock=lambda: 2).send(req)
     assert caught.value.kind is TransportFailure.STALE_CREDENTIAL
     assert caught.value.delivery is DeliveryState.NOT_SENT
     assert caught.value.__context__ is None
@@ -113,7 +114,7 @@ def test_prepared_quote_rechecks_current_token(broker, change, monkeypatch):
                   now_ms=1, expires_at_ms=200)
     factory = no_network(monkeypatch)
     with pytest.raises(TransportError) as caught:
-        HttpsTransport(network_enabled=True).send(req, now_ms=now_ms)
+        HttpsTransport(network_enabled=True, clock=lambda: now_ms).send(req)
     assert caught.value.kind is TransportFailure.TOKEN_UNAVAILABLE
     assert caught.value.delivery is DeliveryState.NOT_SENT
     assert caught.value.__context__ is None
@@ -126,7 +127,7 @@ def test_quote_send_stays_single_attempt_with_bound_token(broker, environment, m
     identity, provider, cache = setup(broker, environment)
     req = request_for("quote", identity, provider, cache)
     factory, conn = fake_network(monkeypatch)
-    result = HttpsTransport(network_enabled=True).send(req, now_ms=2)
+    result = HttpsTransport(network_enabled=True, clock=lambda: 2).send(req)
     assert result.request is req and result.status == 200
     factory.assert_called_once()
     conn.request.assert_called_once()
@@ -148,7 +149,7 @@ def test_handshake_change_stops_before_any_http_write(change, expected, monkeypa
             cache.revoke(provider, identity)
     conn.connect.side_effect = revoke_during_handshake
     with pytest.raises(TransportError) as caught:
-        HttpsTransport(network_enabled=True).send(req, now_ms=2)
+        HttpsTransport(network_enabled=True, clock=lambda: 2).send(req)
     assert caught.value.kind is expected and caught.value.delivery is DeliveryState.NOT_SENT
     conn.request.assert_not_called()
     conn.close.assert_called_once()
