@@ -131,6 +131,28 @@ def test_missing_field_is_not_zero_and_wrong_status_rejected() -> None:
         )
 
 
+@pytest.mark.parametrize("status,kind", [
+    (None, "MissingRequired"),  # root rsp_cd absent
+    ("null", "MissingRequired"),
+    ('"0"', "SourceStatus"),
+    ('"00001"', "SourceStatus"),
+    ('""', "SourceStatus"),
+    ("0", "SourceStatus"),  # JSON number, not the documented text
+])
+def test_db_root_status_is_required_and_exact(status, kind) -> None:
+    # dbsec-open-api@564b5100 dbsec_sdk/response.py L78-85 (ADR 0015).
+    head = "" if status is None else f'"rsp_cd":{status},'
+    payload = "{" + head + '"Out":{"Prpr":"10"}}'
+    with pytest.raises(ValueError) as caught:
+        decode_ticker_candidate("db", "005930", "KRX", payload)
+    assert str(caught.value) == f"rsp_cd: {kind}"
+    with pytest.raises(ValueError) as native_caught:
+        native._decode_ticker_candidate("db", "005930", "KRX", payload)
+    assert str(native_caught.value) == f"rsp_cd: {kind}"
+    ok = decode_ticker_candidate("db", "005930", "KRX", '{"rsp_cd":"00000","Out":{"Prpr":"10"}}')
+    assert ok.last == Decimal("10")
+
+
 def test_native_entry_point_and_private_wrapper_agree() -> None:
     payload = json.dumps(SYNTHETIC["meritz"])
     a = decode_ticker_candidate("meritz", "005930", "KRX", payload)

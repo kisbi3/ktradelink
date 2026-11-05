@@ -371,7 +371,11 @@ pub fn decode_ticker_candidate(
             // not mapped. `price` is unsigned; direction lives in `sign`.
         }
         Broker::Db => {
-            status(root, "rsp_cd", StatusSpec::ExactText("00000"))?;
+            // The official SDK (dbsec-open-api@564b5100, dbsec_sdk/response.py
+            // L78-85) treats business success as rsp_cd == "00000" even on
+            // HTTP 200, and reads a missing rsp_cd as "" (not success). So the
+            // root status is REQUIRED here (ADR 0015).
+            required_status(root, "rsp_cd", "00000")?;
             let row = child_object(root, "Out")?;
             prices.last = price(row, "Prpr", true, false)?;
             prices.open = price(row, "Oprc", false, false)?;

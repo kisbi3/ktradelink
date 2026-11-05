@@ -44,7 +44,7 @@ fn volume_null_and_zero_maintain_distinct_meanings() {
     assert_eq!(absent.input().volume, None);
     let zero_int = offline("kiwoom", r#"{"cur_prc":"10","trde_qty":0}"#);
     assert_eq!(zero_int.input().volume, Some(0));
-    assert_eq!(offline("db", r#"{"Out":{"Prpr":"10"}}"#).input().volume, None);
+    assert_eq!(offline("db", r#"{"rsp_cd":"00000","Out":{"Prpr":"10"}}"#).input().volume, None);
     assert_eq!(offline("toss", r#"{"result":[{"symbol":"005930","currency":"KRW","lastPrice":"10"}]}"#).input().volume, None);
 }
 
@@ -69,7 +69,7 @@ fn signed_kiwoom_prices_and_floating_point_inputs_are_not_guessed() {
     for (id, payload) in [
         ("kis", r#"{"output":{"stck_prpr":72000.25}}"#),
         ("ls", r#"{"rsp_cd":"00000","t1102OutBlock":{"shcode":"005930","price":72000.25}}"#),
-        ("db", r#"{"Out":{"Prpr":72000.25}}"#),
+        ("db", r#"{"rsp_cd":"00000","Out":{"Prpr":72000.25}}"#),
     ] {
         let e = decode(Broker::parse(id).unwrap(), "005930", Venue::Krx, payload).unwrap_err();
         assert_eq!(e.kind, DecodeKind::InvalidPrice);
@@ -307,4 +307,32 @@ fn ls_t1102_status_block_and_symbol_are_required() {
     let err = decode(Broker::Ls, "005930", Venue::Krx,
         r#"{"rsp_cd":"secret-response","t1102OutBlock":{"shcode":"005930","price":10}}"#).unwrap_err();
     assert!(!err.to_string().contains("secret-response"));
+}
+
+#[test]
+fn db_root_status_is_required_and_exact() {
+    // dbsec-open-api@564b5100 dbsec_sdk/response.py L78-85: business success is
+    // rsp_cd == "00000" even on HTTP 200; a missing rsp_cd reads as "".
+    let ok = r#"{"rsp_cd":"00000","Out":{"Prpr":"10"}}"#;
+    assert_eq!(last("db", ok), "10");
+    let cases = [
+        (r#"{"Out":{"Prpr":"10"}}"#, DecodeKind::MissingRequired),
+        (r#"{"rsp_cd":null,"Out":{"Prpr":"10"}}"#, DecodeKind::MissingRequired),
+        (r#"{"rsp_cd":"0","Out":{"Prpr":"10"}}"#, DecodeKind::SourceStatus),
+        (r#"{"rsp_cd":"00001","Out":{"Prpr":"10"}}"#, DecodeKind::SourceStatus),
+        (r#"{"rsp_cd":"","Out":{"Prpr":"10"}}"#, DecodeKind::SourceStatus),
+        (r#"{"rsp_cd":" 00000","Out":{"Prpr":"10"}}"#, DecodeKind::SourceStatus),
+        (r#"{"rsp_cd":"IGW00121","Out":{"Prpr":"10"}}"#, DecodeKind::SourceStatus),
+        (r#"{"rsp_cd":"M100","Out":{"Prpr":"10"}}"#, DecodeKind::SourceStatus),
+        (r#"{"rsp_cd":0,"Out":{"Prpr":"10"}}"#, DecodeKind::SourceStatus),
+        (r#"{"rsp_cd":5,"Out":{"Prpr":"10"}}"#, DecodeKind::SourceStatus),
+        (r#"{"rsp_cd":true,"Out":{"Prpr":"10"}}"#, DecodeKind::SourceStatus),
+        (r#"{"rsp_cd":["00000"],"Out":{"Prpr":"10"}}"#, DecodeKind::SourceStatus),
+        // a status nested only inside Out is not the root status
+        (r#"{"Out":{"rsp_cd":"00000","Prpr":"10"}}"#, DecodeKind::MissingRequired),
+    ];
+    for (payload, kind) in cases {
+        let err = decode(Broker::Db, "005930", Venue::Krx, payload).unwrap_err();
+        assert_eq!((err.field, err.kind), ("rsp_cd", kind), "{payload}");
+    }
 }

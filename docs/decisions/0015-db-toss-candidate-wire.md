@@ -183,6 +183,51 @@ responses were not copied. Page hashes identify only the copy retrieved.
     LS decoder already requires its `rsp_cd` (ADR 0010). Making DB's
     `rsp_cd` required is a **blocking gate before any public DB quote**
     (ChatGPT review of PR #30, L1); it is tracked as its own follow-up.
+
+    **Resolved** by the follow-up branch
+    `claude/issue-17-db-status-required` (Issue #17), which is now under
+    independent review. The DB ticker decoder now calls the same
+    `required_status` helper as LS. A missing or `null` root `rsp_cd`
+    fails `MissingRequired`. Any other value or JSON type fails
+    `SourceStatus`, including `"0"`, `"00001"`, `""`, `IGW…`, `M100` and
+    the number `0`. Only the exact string `"00000"` passes. Evidence,
+    fetched from public GitHub at the pinned commit on 2026-11-05:
+    - [`dbsec_sdk/response.py`](https://github.com/DBsecurities/dbsec-open-api/blob/564b5100b80a3a785468b77ee8c0557f6edcfdeb/dbsec_sdk/response.py#L78-L85)
+      blob `6ce92fdc7fca3e34dda4c25b2797e153de29f7a5`, L78–85. `is_ok`
+      checks only HTTP 2xx, so business success is
+      `rsp_cd == '00000'`. The server can return business error codes
+      (`M100`/`IGW…`) with HTTP 200. A missing `rsp_cd` is read as `""`,
+      which is not success.
+    - [`docs/errors_and_rate_limits.md`](https://github.com/DBsecurities/dbsec-open-api/blob/564b5100b80a3a785468b77ee8c0557f6edcfdeb/docs/errors_and_rate_limits.md#L52-L56)
+      blob `889d4557b9a60d7965eca02673455ec4373c43e9`:
+      - L52–56: the only HTTP 200 platform code is `00000`.
+      - L104–109: the service code `00000` covers several messages,
+        including "모의투자 데이터가 없습니다" (no demo data).
+      - L192–193: one code may carry several messages.
+
+      An `00000` without `Out.Prpr` therefore still fails, on the
+      required price field.
+
+    Native `CONTRACT_VERSION` is unchanged. The change tightens behaviour
+    only; no function or signature changes. This follows the precedent of
+    ADR 0010, which made LS `rsp_cd` required without a bump (ADR 0014
+    bumps only for a new native function). An older native build would
+    still accept a missing DB status. DB has no public `fetch_ticker`
+    (ADR 0013), so that build is reachable only through the test-only
+    offline seams.
+
+    Ticker decoders that **still accept a missing root status** are
+    listed here only. They are unchanged and each needs its own evidence
+    and change:
+    - KIS `rt_cd` (`"0"`);
+    - Kiwoom `return_code` (integer `0`);
+    - Meritz `rsp_cd` (`"0000"`, quote-scoped candidate).
+    - Toss: no status field is checked at all; see the root `error`
+      finding below.
+
+    The public `fetch_ticker` path requires the status for KIS, Kiwoom
+    and LS in Python (`_public_client._FETCH_TICKER`). The order-book
+    decoders (KIS, Kiwoom, LS) already require theirs.
   - The DB decoder does not map the documented `AcmlVol` (volume). That is
     not a safety issue.
   - The Toss decoder does not reject a root `error` next to `result`. The

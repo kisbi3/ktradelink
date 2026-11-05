@@ -18,7 +18,7 @@
 | `kis` | [KIS domestic stock quote example](https://github.com/koreainvestment/open-trading-api/blob/main/examples_llm/domestic_stock/inquire_price/chk_inquire_price.py) (FHKST01010100) | `output` object | `stck_prpr` | `stck_oprc`, `stck_hgpr`, `stck_lwpr`, `acml_vol` | Event timestamp; KIS response may not specify confirmed venue for every TR |
 | `kiwoom` | [Kiwoom REST ka10001 publisher example](https://github.com/Kiwoom-Securities/Kiwoom-REST-API/blob/main/examples/%EA%B5%AD%EB%82%B4%EC%A3%BC%EC%8B%9D/%EC%A2%85%EB%AA%A9%EC%A0%95%EB%B3%B4/get_domestic_stock_info.py) | Root object | `cur_prc` | `open_pric`, `high_pric`, `low_pric`, `trde_qty`, optional `stk_cd` | **Signed price semantics** — reject signs until documented at field level |
 | `ls` | [LS API guide t1102 REST detail](https://openapi.ls-sec.co.kr/apiservice) (retrieved 2026-11-05, see [ledger](live-auth-transport-gates-2026-11-05.md)) | `t1102OutBlock` object; **required** root `rsp_cd` `00000` and echoed `shcode` | `price` (unsigned; direction in `sign`) | `volume` | `open`/`high`/`low` are `0` before the first trade in the publisher example, so they are **not mapped**; no venue field in the response |
-| `db` | [Official DB domestic quote Python sample](https://openapi.dbsec.co.kr/testbed-sample), `PRICE` | `Out` object and `rsp_cd` success code `00000` | `Prpr` | `Oprc`, `Hprc`, `Lprc` | `Sdpr` is a **reference/base price**, not proven previous session close; no volume in publisher example |
+| `db` | [Official DB domestic quote Python sample](https://openapi.dbsec.co.kr/testbed-sample), `PRICE` | `Out` object; **required** root `rsp_cd`, exactly `00000` ([SDK `response.py` L78–85](https://github.com/DBsecurities/dbsec-open-api/blob/564b5100b80a3a785468b77ee8c0557f6edcfdeb/dbsec_sdk/response.py#L78-L85), ADR 0015) | `Prpr` | `Oprc`, `Hprc`, `Lprc` | `Sdpr` is a **reference/base price**, not proven previous session close; no volume in publisher example |
 | `toss` | [Server-owned canonical OpenAPI 3.1 v1.2.28](https://openapi.tossinvest.com/openapi-docs/latest/openapi.json), `GET /api/v1/prices` | `result` array, match **exact requested symbol**, `currency=KRW` | `lastPrice` | `symbol`, `currency` | PriceResponse has **no volume/OHLC**; `timestamp` is ISO offset text; conversion deferred until semantics/coverage verified |
 | `meritz` | [Official current-price Python sample](https://openapi.imeritz.com/samplecode-py), `GET /market/v1/prices` | `data` object | `stck_prpr` | `oprc`, `hprc`, `lprc`, `acml_vol` | Native event clock, `previous_close`, market-wide aggregation, validated response-code taxonomy beyond published example |
 
@@ -48,8 +48,10 @@ However, the current-price sample does not present a raw success
 envelope proving that 0000 is the ONLY current-price success code.
 Exact GET /market/v1/prices status semantics remain UNVERIFIED.
 A production adapter must verify its own endpoint-specific contract.
-Missing status is tolerated only for synthetic examples, not as
-permission to ignore actual HTTP or provider error status.
+A missing Meritz status is still accepted, for synthetic examples
+only. That is not permission to ignore an actual HTTP or provider error
+status. LS and DB no longer accept a missing status: their root `rsp_cd`
+is **required** (ADR 0010, ADR 0015).
 
 ## Shared input and error boundaries after Gemini review
 
@@ -61,10 +63,16 @@ permission to ignore actual HTTP or provider error status.
 - Optional Kiwoom stk_cd and LS shcode may be absent in an offline
   sample. If present, null/number/bool are InvalidField; a well-formed
   mismatched string is AmbiguousSymbol.
-- Status values are broker-specific when present: KIS rt_cd string
-  "0", Kiwoom return_code numeric integer 0, DB rsp_cd string
-  "00000", Meritz rsp_cd string "0000" as limited above.
-  Present null and wrong JSON types fail SourceStatus.
+- Status values are broker-specific: KIS rt_cd string "0", Kiwoom
+  return_code numeric integer 0, LS and DB rsp_cd string "00000",
+  Meritz rsp_cd string "0000" as limited above.
+- KIS, Kiwoom and Meritz still accept a missing status, for synthetic
+  examples only. A present null or wrong JSON type fails SourceStatus.
+- LS and DB require the root rsp_cd (ADR 0010, ADR 0015). A missing or
+  null rsp_cd fails MissingRequired. Any other value or type fails
+  SourceStatus.
+- Toss has no status field in the decoder. Toss is listed with the
+  brokers that tolerate a missing status in ADR 0015.
 - The upper input-size bound is inclusive: 1,048,576 UTF-8 bytes
   can decode; 1,048,577 bytes rejects before JSON parsing. This
   is an application safety limit, NOT a broker publisher limit.

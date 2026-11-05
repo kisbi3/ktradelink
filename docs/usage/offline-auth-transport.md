@@ -66,6 +66,7 @@ FixtureOutcome defaults to UNVERIFIED and must be explicitly SUCCESS to decode.
 It is a test author's assertion, not a parsed broker status or market proof.
 A success fixture still passes through the existing Rust JSON/status validation;
 present invalid status fields are rejected. Existing optional status omissions
+(KIS, Kiwoom and Meritz; LS and DB require their status, ADR 0010/0015)
 remain offline-only behavior. Do NOT copy this flow into a live adapter: actual
 status completeness, requested symbol/market/environment and session clock must
 be verified from publisher-evidenced wire responses. No timestamp is inferred
