@@ -17,15 +17,25 @@
   account was registered or logged into. Only public Git repositories,
   public portal pages and publisher JSON documentation endpoints were
   fetched.
-- **Draft state:** §2–§4 (KIS, Kiwoom, LS) are complete. §5–§7 (DB, Toss,
-  Meritz) are written separately and are `pending` in this draft; the
-  DB/Toss/Meritz columns of §1 and §8 are `pending` until then.
 - **Retrieval, all on 2026-11-05 UTC:**
   - KIS and Kiwoom: shallow clones of the pinned commits, 07:54–07:56;
     `git ls-remote` showed each pinned SHA as the remote `HEAD`.
+  - DB and Meritz: the pinned commits fetched with `git fetch --depth 1`,
+    07:54:53 and 07:54:54 (§5.1, §7.1).
   - KIS developer portal JSON and pages: 07:58:57–08:02:22 (§2.1).
+  - DB portal JSON and pages: 07:55:50–07:58:11 (§5.1).
+  - Toss public documents: 07:58:32–07:59:18 (§6.1).
+  - Meritz portal pages and JSON: 07:59:54–08:01:12 (§7.1).
   - Kiwoom portal home page: 08:03 (§3.1).
   - LS portal pages and JSON guides: 08:05:40–08:07:26 (§4.1).
+- **Not retrieved** (recorded, not worked around): Kiwoom portal guide and
+  notice pages (connection reset / 404, §3.1); LS forum JSON (HTTP 302,
+  §4.1); KIS and DB homepage pages outside the Open API portals (§2.1,
+  §5.1).
+- **Spot checks before merge:** for each of the six brokers at least two
+  pins (Git blob SHA or sha256 prefix) and the quoted lines were
+  recomputed from the retrieved copies; all matched, after one quotation
+  attribution in §6.3 was corrected (T1, not T3 L9).
 - **Pin formats:**
   - Git blob SHAs are `sha1("blob <len>\0" + bytes)` of the retrieved
     bytes, i.e. what `git hash-object` and `git ls-tree` print. They were
@@ -62,13 +72,13 @@ publisher example, `N` publisher repo note, `—` not found.
 
 | Concern | KIS | Kiwoom REST | LS | DB | Toss | Meritz |
 | --- | --- | --- | --- | --- | --- | --- |
-| Paper exists? | yes, "모의투자" (F+G+C) | yes, "모의투자" / `MOCK` / `demo` (F+C+N) | yes, "모의투자 OPEN API" applied for separately (G) | pending (§5) | pending (§6) | pending (§7) |
-| Selection mechanism | separate origin **and** separate app key; trading TR ids switch to `V…` (F+G+C) | separate origin and separate app key; same api-id; wrong pairing → `8030`/`8031` (F+N) | separate app key (G); REST origin selection **not documented**; onboarding says "tr_id 값이 실전/모의를 구분해요" (G, non-authoritative) | pending | pending | pending |
-| REST origin | `https://openapivts.koreainvestment.com:29443` vs `https://openapi.koreainvestment.com:9443` (F+G+C) | `https://mockapi.kiwoom.com` vs `https://api.kiwoom.com` (F+E+C) | **no paper REST origin documented**; guide lists only `https://openapi.ls-sec.co.kr:8080` (F); onboarding sends paper orders to `:8080` (G) | pending | pending | pending |
-| WS origin | `ws://ops.koreainvestment.com:31000` vs `:21000`, plain `ws://` in both (F+C) | `wss://mockapi.kiwoom.com:10000` vs `wss://api.kiwoom.com:10000` (F+C) | `simulationUrl` `wss://openapi.ls-sec.co.kr:29443` vs `:9443` (F) | pending | pending | pending |
-| TR-id change | market-data TR ids identical (F); trading TR ids `T…` → `V…` (F+G); sample client rewrites leading `T`/`J`/`C` (C); WS 체결통보 `H0STCNI0` → `H0STCNI9` (F) | none: same `api-id` in both (F+E) | not documented in the guide (F); onboarding uses a different order TR for paper (G, conflicts with the catalog) | pending | pending | pending |
-| Market-data availability | per-API "모의 Domain" / "모의 TR ID" fields; current price, order book, day candles, today's minute candles and trades **offered**; by-date minutes, symbol info, holidays, VI, NXT/통합 WS: "모의투자 미지원" (F) | no per-API column; all 337 spec entries list a 모의투자 domain (F); only `ka01690` says "해당 API는 모의투자를 지원하지 않습니다" (F); error `8104` "모의투자에서 지원하지 않는 API 입니다." (F) | **not found**: no per-TR paper flag in the guide (F) | pending | pending | pending |
-| Paper limits | REST "(모의투자) 1초당 1건" vs "(실전투자) 1초당 18건"; token 1/s (G); paper NXT unsupported for trading (G); paper run by a separate operator (G) | no paper number found; rate codes `1700`–`1702` without numbers (F) | no paper number found; per-TR `transactionPerSec` only (F); paper fills only "정규장 시간(09:00~15:30)" (G) | pending | pending | pending |
+| Paper exists? | yes, "모의투자" (F+G+C) | yes, "모의투자" / `MOCK` / `demo` (F+C+N) | yes, "모의투자 OPEN API" applied for separately (G) | yes, "모의투자"; SDK mode `demo`, key prefix `vtl_` (G+N+C) | **not found** in any public document (F+G) | **no**: "현재 메리츠증권에서는 Open API 모의투자 기능을 제공하지 않습니다." (G); "모의계좌는 없습니다" (N) |
+| Selection mechanism | separate origin **and** separate app key; trading TR ids switch to `V…` (F+G+C) | separate origin and separate app key; same api-id; wrong pairing → `8030`/`8031` (F+N) | separate app key (G); REST origin selection **not documented**; onboarding says "tr_id 값이 실전/모의를 구분해요" (G, non-authoritative) | same REST origin; "발급받은 앱 키의 속성으로 서버가 분기합니다." (N); separate paper app key "(모의투자 별도 발급)" (G); WS port differs | — (one production server) | — ; the portal "테스트베드" only replays guide examples and sends no request (G) |
+| REST origin | `https://openapivts.koreainvestment.com:29443` vs `https://openapi.koreainvestment.com:9443` (F+G+C) | `https://mockapi.kiwoom.com` vs `https://api.kiwoom.com` (F+E+C) | **no paper REST origin documented**; guide lists only `https://openapi.ls-sec.co.kr:8080` (F); onboarding sends paper orders to `:8080` (G) | **same** `https://openapi.dbsec.co.kr:8443` for both; portal `simulatedDomain` null (F+N) | only `https://openapi.tossinvest.com` (F) | only `https://openapi.imeritz.com:9443`; `simulatedDomain` null for all 87 APIs (F) |
+| WS origin | `ws://ops.koreainvestment.com:31000` vs `:21000`, plain `ws://` in both (F+C) | `wss://mockapi.kiwoom.com:10000` vs `wss://api.kiwoom.com:10000` (F+C) | `simulationUrl` `wss://openapi.ls-sec.co.kr:29443` vs `:9443` (F) | `wss://openapi.dbsec.co.kr:17070/websocket` vs `:7070` (F+N) | only `wss://openapi-ws.tossinvest.com/ws/v1`, server keyed `production` (F) | only `wss://openapi.imeritz.com:29443/websocket` (F) |
+| TR-id change | market-data TR ids identical (F); trading TR ids `T…` → `V…` (F+G); sample client rewrites leading `T`/`J`/`C` (C); WS 체결통보 `H0STCNI0` → `H0STCNI9` (F) | none: same `api-id` in both (F+E) | not documented in the guide (F); onboarding uses a different order TR for paper (G, conflicts with the catalog) | none: identical TR codes (N) | n/a | n/a |
+| Market-data availability | per-API "모의 Domain" / "모의 TR ID" fields; current price, order book, day candles, today's minute candles and trades **offered**; by-date minutes, symbol info, holidays, VI, NXT/통합 WS: "모의투자 미지원" (F) | no per-API column; all 337 spec entries list a 모의투자 domain (F); only `ka01690` says "해당 API는 모의투자를 지원하지 않습니다" (F); error `8104` "모의투자에서 지원하지 않는 API 입니다." (F) | **not found**: no per-TR paper flag in the guide (F) | repo matrix ⭕ for `PRICE`, `HOGA`, `CONCLUSION`, `CHARTMIN`/`CHARTDAY`, `JCODES`, `S00`/`S01` (N); since 2025-10-23 paper quote calls are served by the **production** quote system (G); portal phrase rule contradicts the matrix (§5.6) | no paper environment (—) | no paper environment (G) |
+| Paper limits | REST "(모의투자) 1초당 1건" vs "(실전투자) 1초당 18건"; token 1/s (G); paper NXT unsupported for trading (G); paper run by a separate operator (G) | no paper number found; rate codes `1700`–`1702` without numbers (F) | no paper number found; per-TR `transactionPerSec` only (F); paper fills only "정규장 시간(09:00~15:30)" (G) | no paper-specific figures; per-app 20 TPS and token 1/min not split by environment; WS "모의투자 - 40세션" per port (G); paper-only `M001`/`M100` messages and success `00000` "모의투자 데이터가 없습니다." (N) | n/a; production only: token re-issue revokes the previous token (F+G), IP allow-list (G) | n/a; every call reaches a real account (G+N) |
 
 ## 2. KIS (Korea Investment & Securities)
 
@@ -585,15 +595,438 @@ master) are served in paper.
 
 ## 5. DB Securities
 
-`pending` — written separately; to be merged before review.
+### 5.1 Pinned sources
+
+GitHub sources are at
+[`DBsecurities/dbsec-open-api@564b5100`](https://github.com/DBsecurities/dbsec-open-api/tree/564b5100b80a3a785468b77ee8c0557f6edcfdeb)
+(`564b5100b80a3a785468b77ee8c0557f6edcfdeb`, committer date
+2026-08-20T10:06:26+09:00), the commit already pinned by the trade, candle
+and capability ledgers; fetched 07:54:53Z. Blob SHAs are from
+`git rev-parse <commit>:<path>`. Portal JSON on `https://openapi.dbsec.co.kr`
+was retrieved 07:55:50–07:58:11Z; the portal has no document version, so
+each API's `lastModifiedDate` is given where it matters. The three group
+lists DP2–DP4 and DP5 have the **same sha256** as the copies pinned in the
+trade/candle/capability ledgers (06:47–07:14Z), so they did not change.
+
+| # | Path / URL | Pin | Used for |
+| --- | --- | --- | --- |
+| D1 | [`config.yaml.example`](https://github.com/DBsecurities/dbsec-open-api/blob/564b5100b80a3a785468b77ee8c0557f6edcfdeb/config.yaml.example#L4-L26) | blob `f6204f1399f2f080c11f28364444b40b7868ef96`; L4–26 | `prd_*`/`vtl_*` key pairs; "REST API URL은 운영/모의 동일 (앱 속성으로 내부 분기)"; WS ports; `mode` |
+| D2 | [`README.md`](https://github.com/DBsecurities/dbsec-open-api/blob/564b5100b80a3a785468b77ee8c0557f6edcfdeb/README.md#L684-L741) | blob `377b5b9e0e3bcdfa54edad23507860798fa91143`; L104, L280, L286–314, L427–446, L684–705, L736–741 | Paper application process; "운영 vs 모의투자" table; paper-support rule |
+| D3 | [`docs/api_support_matrix.md`](https://github.com/DBsecurities/dbsec-open-api/blob/564b5100b80a3a785468b77ee8c0557f6edcfdeb/docs/api_support_matrix.md#L1-L59) | blob `f63c7746d947ac1c3d704489b18ad5d62657f65c`; L3–6, L17, L31, L34, L53–59, L75–76, L153–157 | Per-API ⭕/❌ and TPS |
+| D4 | [`docs/errors_and_rate_limits.md`](https://github.com/DBsecurities/dbsec-open-api/blob/564b5100b80a3a785468b77ee8c0557f6edcfdeb/docs/errors_and_rate_limits.md#L104-L222) | blob `889d4557b9a60d7965eca02673455ec4373c43e9`; L106–109, L161–173, L184–187, L197–222 | Paper messages; REST/WS limits (not split by environment) |
+| D5 | [`dbsec_sdk/config.py`](https://github.com/DBsecurities/dbsec-open-api/blob/564b5100b80a3a785468b77ee8c0557f6edcfdeb/dbsec_sdk/config.py#L24-L162) | blob `8fab32d061fa9b483247915b2a37159831a0eeee`; L24–35, L81–100, L112–130, L143–162 | SDK environment selection (publisher client code) |
+| D6 | [`dbsec_sdk/auth.py`](https://github.com/DBsecurities/dbsec-open-api/blob/564b5100b80a3a785468b77ee8c0557f6edcfdeb/dbsec_sdk/auth.py#L96-L150) | blob `b83addb2b8007ae12946eab1ae0395ceb3eca7de`; L96–106, L131, L150, L250–253 | Token cache tagged with `mode`; base headers identical in both modes |
+| D7 | [`dbsec_sdk/websocket/stream.py`](https://github.com/DBsecurities/dbsec-open-api/blob/564b5100b80a3a785468b77ee8c0557f6edcfdeb/dbsec_sdk/websocket/stream.py#L81) | blob `3e16937c651e67b03fbcaa000964119b0e8c196b`; L81 | SDK hint for WS `10005` |
+| D8 | [`web_test/README.md`](https://github.com/DBsecurities/dbsec-open-api/blob/564b5100b80a3a785468b77ee8c0557f6edcfdeb/web_test/README.md#L24-L33) | blob `2aecf79c76d1874ef1db4a479682ffe1b5d8dd73`; L24–33 | "어느 토큰을 쓰는지가 환경을 결정" |
+| D9 | [`HOWTOUSE.md`](https://github.com/DBsecurities/dbsec-open-api/blob/564b5100b80a3a785468b77ee8c0557f6edcfdeb/HOWTOUSE.md#L33-L34) | blob `f9452d057fe3962610b17f168674cccbff7dd7b4`; L33–34, L82–86 | Separate real/paper app keys |
+| DP1 | [apiservice](https://openapi.dbsec.co.kr/apiservice) (HTML) | sha256 `fc1105771d2c0de8`, 07:56:19Z | Row "모의투자 도메인" (`simulatedDomain`); shown only when `!!data.simulatedDomain` |
+| DP2 | `/api/apis/public/api-list/80005fb0-6feb-4b8b-904a-605c59e29b4f` (국내주식시세, 15 APIs) | sha256 `f4f56996c26c33b3`, 07:55:50Z; `lastModifiedDate` PRICE 2024-06-05, HOGA/CONCLUSION/JCODES 2024-03-28 | `domain`, `simulatedDomain`, `description`, `extraParam` |
+| DP3 | `…/api-list/0bc09824-e8c2-491a-8c9d-b99e64b4b907` (국내주식/선물차트, 5 APIs) | sha256 `f10207c4b22890cb`, 07:55:52Z; CHARTMIN/CHARTDAY 2025-08-27 | same |
+| DP4 | `…/api-list/05ac28b8-624f-4115-8aed-cf55f24279dd` (국내주식주문, 17 APIs) | sha256 `4f2578523296c2ec`, 07:55:51Z; CSPAT00600 2026-06-15 | Paper phrase on order/account APIs (named only) |
+| DP5 | `…/api-list/cc55b867-e049-421b-a798-be016370ff44` (OAuth 인증) | sha256 `eeb775c8ecd70a5f`, 07:56:44Z; token 2026-02-25 | Token description |
+| DP6 | `…/api-list/94b5fddc-b819-451b-9619-13ee42468798` (국내주식시세(실시간), 9 APIs) | sha256 `f48090f104faa614`, 07:56:44Z | WS `domain` vs `simulatedDomain` |
+| DP7 | `…/api-list/f1819725-95e6-4445-ad7f-aa1908b20b03` (해외선물옵션시세(실시간)) | sha256 `83e5833f4d7389d3`, 07:56:46Z | Control: `simulatedDomain` null |
+| DP8 | `/api/apis/guide/tr/property/cd5b4c37-609c-4b8c-995f-f4f7a594a16c` (token field table) | sha256 `a7d184619b8d4e84`, 07:57:10Z | No environment field in the token request |
+| DP9 | [howto-use](https://openapi.dbsec.co.kr/howto-use) | sha256 `391a634b1d63cf6d`, 07:57:25Z | "(모의투자 별도 발급)" |
+| DP10 | Notice "[공지] 모의투자 관련 변경사항 (25.10.23)" — `/api/forums/10000000-0000-0011-0000-000000000001/posts/d65120c3-f972-4f4a-90e1-e2333a59c80c` | sha256 `109edd7955121c02`, 07:58:05Z; `createdDate` 2025-10-23T08:59+09:00 | Paper app may call quote APIs from 2025-10-23 08:00 |
+| DP11 | Notice "[공지] 모의투자 시스템 정상화 공지" — same forum, post `10a58364-97b6-4a41-a4d9-9bb0fe517693` | sha256 `1dd7263396b45fed`, 07:58:06Z; `createdDate` 2025-10-23T10:43+09:00 | Paper quotes are routed to the production quote system; paper-only outage |
+| DP12 | FAQ "OpenAPI 모의투자 앱 신청방법" — `/api/forums/10000000-0000-0011-0000-000000000002/posts/09835da7-309c-4327-8127-c63d53b9bb2e` | sha256 `8fac2a3530432343`, 07:58:07Z; `createdDate` 2026-08-05 | Registration process; product scope |
+| DP13 | FAQ "Open API 호출 유량 안내 (Rest API, Websocket) - 2026.9.14 기준" — same forum, post `8a596b8d-07e6-4a61-ae24-bcd04ac671e6` | sha256 `d7b08453a0435039`, 07:58:08Z; `createdDate` 2024-08-08 (title says "2026.9.14 기준") | Per-port WS session count incl. 모의투자 |
+
+Evidence levels: DP2–DP8 `field table`; DP9–DP13 `publisher guide`; D2–D4,
+D8–D9 `publisher repo note`; D1, D5–D7 `publisher client code` (D1 is a
+sample config read by that code).
+
+**Missing evidence:**
+
+- No paper service-hours statement, no paper-specific rate limit, and no
+  statement on whether paper **WebSocket** market data comes from the
+  production feed.
+- No public change log on whether the 2025-10-23 routing (DP10/DP11) covers
+  the 국내주식/선물차트 group (DP10 names only the three "시세 API" groups).
+- The DB homepage pages for 상시모의투자 (`www.dbsec.co.kr/custcenter/vts/…`,
+  linked from D2 L104) were not retrieved; they are outside the Open API
+  portal.
+
+### 5.2 Does a paper environment exist?
+
+**Yes** — "모의투자" (repo and portal); the SDK calls it `demo` and the key
+prefix `vtl_` (D1 L8–10, D5 L81–100). Selection:
+
+- **REST:** same origin; the server decides by the app key. D1 L13 "REST
+  API URL은 운영/모의 동일 (앱 속성으로 내부 분기)"; D2 L693 "발급받은 앱
+  키의 속성으로 서버가 분기합니다."; D8 L29 "REST 는 운영/모의 URL 이 동일해
+  **어느 토큰을 쓰는지가 환경을 결정**합니다." Portal REST APIs have
+  `simulatedDomain` null (DP2–DP5), so DP1 shows no "모의투자 도메인" row for
+  them.
+- **WebSocket:** separate port, "**WebSocket 포트만 다릅니다** (운영: 7070,
+  모의: 17070)" (D2 L693); DP6 gives `simulatedDomain` for every domestic
+  real-time API.
+- **No TR-id prefix or header switch:** D3 lists one TR code per API for
+  both environments (field table + repo note).
+- **Separate app key:** DP9 "계좌별 개인 고유 토큰(APP_KEY, APP_SECRET)이
+  발급됩니다.(모의투자 별도 발급)"; D9 L33 "**실전투자용**(`prd_*`) 과
+  **모의투자용**(`vtl_*`) 앱키를 발급받습니다."
+- **Registration (process only):** DP12 / D2 L290 "신청 순서: 상시모의투자
+  참가신청(홈페이지/MTS) → 모의투자 계좌 발급 → OpenAPI 모의투자 서비스 신청";
+  D2 L314 "상시모의투자 계좌가 없으면 OpenAPI 모의투자 서비스를 신청할 수
+  없습니다." Scope: "국내주식, 해외주식, 국내선물옵션 (해외선물옵션의 경우
+  모의투자 지원 X)" (DP12; D2 L292–296).
+
+### 5.3 Origins and identifiers
+
+| Concern | Production | Paper | Evidence |
+| --- | --- | --- | --- |
+| REST origin | `https://openapi.dbsec.co.kr:8443` | **same** origin; environment chosen by the app key | D1 L13–14; D2 L688; DP2–DP5 `domain`, `simulatedDomain` null (field table) |
+| WebSocket origin | `wss://openapi.dbsec.co.kr:7070/websocket` (해외선물옵션: `:7071`) | `wss://openapi.dbsec.co.kr:17070/websocket`; none for 해외선물옵션 | D1 L17–21; D2 L689–690; DP6 `domain` `…:7070`, `simulatedDomain` `…:17070`; DP7 `simulatedDomain` null |
+| Token route / behaviour | `POST /oauth2/token` (form; `appkey`, `appsecretkey`, `grant_type`, `scope` "oob") | same route and fields with the 모의투자 app key; no environment field | DP5, DP8 (field table); D5 L81–100 (client code). DP5: "API호출 유량은 1분에 1건", 24 h validity, "유효기간 만료 전 토큰을 발급을 하는경우, 동일한 토큰이 발급됩니다. (만료기간도 동일)" — **not stated per environment** |
+| TR-id / api-id differences | e.g. `PRICE`, `HOGA`, `CONCLUSION`, `CHARTMIN`, `JCODES`, `S00` | **identical** TR codes | D3 (single TR column) |
+| Required header differences | `content-type`, `authorization` (SDK) | **none documented**; SDK sends the same two headers in both modes | D6 L250–253 (client code); DP2–DP8 have no environment header |
+
+SDK-only guards (client code, not a contract): the token cache records the
+`mode` and is discarded on mismatch (D6 L96–106, L131, L150); `mode` must be
+exactly `"demo"` or `"production"`, defaulting to `"demo"` (D5 L122), and
+D5 L119–120 explains why: "오타 시 REST 는 실전(prd) 앱키로, WebSocket 은
+demo 로 엇갈려 폴백돼 '모의라고 믿고 실주문'이 나갈 수 있어 명시적으로
+차단한다."
+
+### 5.4 Market-data route availability in paper
+
+D3 legend (L4): "⭕ — 모의투자(`mode: "demo"`) + 실전투자 모두 호출 가능";
+D2 L740: "시세 · 실시간 · 차트 그룹은 전부 사용 가능". DP10: "모의투자 앱에
+시세 API 사용가능하도록 시스템 개선 (아래 서비스그룹의 API 사용가능)" —
+"국내주식 시세 API", "해외주식 시세 API", "국내선물옵션 시세 API";
+"사용가능일시 : 25.10.23 (08:00)". None of the market-data descriptions in DP2/DP3/DP6
+carries the phrase "※ 모의투자 계좌로 사용가능한 API입니다." (see §5.6 #1).
+
+| Capability | Route | Paper supported? (verbatim) | Evidence |
+| --- | --- | --- | --- |
+| Current price (ticker) | `PRICE` `POST /api/v1/quote/kr-stock/inquiry/price`; `MULTIPRICE` `…/multiprice` | ⭕ (both) | D3 L55–56; DP10 group "국내주식 시세 API" |
+| Order book | `HOGA` `POST /api/v1/quote/kr-stock/inquiry/orderbook` | ⭕ | D3 L57; DP10 |
+| Candles — minute | `CHARTMIN` `POST /api/v1/quote/kr-chart/min` (tick `CHARTTICK`) | ⭕ | D3 L153–154 only; **not** named in DP10 (chart group) |
+| Candles — day | `CHARTDAY` `POST /api/v1/quote/kr-chart/day` | ⭕ | D3 L155 only; not named in DP10 |
+| Trades | `CONCLUSION` `…/inquiry/hour-price`; `DAYTRADE` `…/inquiry/daily-price` | ⭕ | D3 L58–59; DP10 |
+| Symbol master | `JCODES` `POST /api/v1/quote/kr-stock/inquiry/stock-ticker` | ⭕ | D3 L53; DP10 |
+| WS trades / order book | `S00` 주식체결가, `S01` 주식호가 | ⭕; paper port 17070 | D3 L75–76; DP6 |
+| Token | `token` | ⭕ | D3 L17 |
+
+Account/order differences (named only): paper orders accept only "지정가,
+시장가, 최유리지정가, 최우선지정가" (DP4 주식종합주문 description); D4 L171
+"모의투자 FOK, IOC는 제공하지 않습니다."; NXT order TRs `CSPAT00610/00710/00810`
+are ❌ (D3 L34–36); several account queries are ❌ (e.g. 당일매매손익 조회,
+D3 L40); 해외선물옵션 has no paper at all (D3 L6).
+
+### 5.5 Limits and data quality in paper
+
+- **Data source (REST):** DP11: "모의투자 앱에서도 투자정보 서비스 API
+  사용가능하도록 API 라우팅 작업을 진행하였으나 (당사 모의투자 시스템에서는
+  시세를 제공하지 않아, 운영 시스템 시세 API호출하도록 개선)". REST paper
+  market data is therefore served by the **production quote system**, not a
+  simulator (publisher guide). Delay is not stated.
+- **Data source (WebSocket):** **not documented** for port 17070.
+- **Rate limits:** no paper-specific figures. REST "앱(계좌)별 20 TPS" and
+  per-API TPS (D4 L210, L212; DP13), token "1분에 1건" (DP5, DP13). D3 has a
+  single TPS column used for both modes. DP13 is the only environment split:
+  "한 IP당 웹소켓 각 포트별 40세션 연결 가능 (실전투자 - 40세션, 모의투자 -
+  40세션, 해외선물옵션 - 40세션)". **Inference:** because limits are per app
+  (account) and the paper app has its own key and account, paper calls
+  probably count against a separate bucket; not stated.
+- **Service hours:** not found for paper. D4 L168 "모의투자 장시작전 입니다."
+  (an `M100` order-side message) implies paper order hours exist.
+- **Paper-only messages (D4):** `00000` "모의투자 데이터가 없습니다." and
+  "모의투자 조회가 완료되었습니다." (L108–109, success code);
+  `M001` "서비스가 지연처리되고 있습니다. …" with note "모의투자 시스템 관련
+  메시지" (L161); twelve `M100` messages (L162–173), e.g. "모의투자에서는
+  해당업무가 제공되지 않습니다.". WS `10005` "허용되지 않는 tr_cd 입니다."
+  (L184) — the SDK hint (D7 L81, client code) reads it as "현재 모드(운영/
+  모의)에서 허용되지 않습니다".
+- **Paper-only incident (DP11):** on 2025-10-23 the routing change broke
+  paper business APIs with `rsp_cd` `M024` "Interface ID(QID)를 찾을수
+  없습니다."; "운영 서비스는 이상이 없었으며, 모의투자 서비스만 현상이
+  발생하였습니다." `M024` is not in D4.
+
+### 5.6 Contradictions and gaps
+
+1. **Paper-support rule vs matrix.** D2 L738: an API is paper-capable if its
+   portal description contains "※ 모의투자 계좌로 사용가능한 API입니다.";
+   "그 외는 실전투자 환경에서만 호출됩니다." The phrase appears only on
+   order/account APIs (DP4); **no** quote, chart or real-time description
+   carries it (DP2, DP3, DP6), yet D2 L740 and D3 mark them all ⭕. DP10/DP11
+   (2025-10-23) support ⭕ for the three quote groups; the chart group rests
+   on D3/D2 alone.
+2. **Success code with no paper data.** `00000` "모의투자 데이터가 없습니다."
+   (D4 L108) is a success code; after DP11's routing, whether market-data
+   routes can still return it is not documented. An empty result under
+   `00000` must not be read as "no trades/quotes" without that check.
+3. **Edited FAQ.** DP13's title says "2026.9.14 기준" while `createdDate` is
+   2024-08-08; the portal exposes no revision history.
+4. **SDK default is paper.** D5 L122 defaults `mode` to `"demo"`; the web
+   tester auto-issues from the 실전 key (D2 L280). Both are client
+   conveniences, not server behaviour.
+5. **Mismatch detection.** No documented error for "production token on the
+   paper WS port" or the reverse. `10009` "token 계좌정보와 서버정보가 일치하지
+   않습니다." (D4 L186) is a candidate. **Inference** only.
+
+### 5.7 Implications for a first authorized smoke test (Inference only)
+
+- Paper is the natural first target for: paper-key token issuance and its
+  re-issue rule (same token, same expiry), REST envelope/`rsp_cd` handling,
+  and decoding of `PRICE`, `HOGA`, `CONCLUSION`, `CHARTMIN`/`CHARTDAY` and
+  `JCODES` payloads — DP11 says these come from the production quote system,
+  so field shapes are plausibly the same as production.
+- Paper **cannot** prove: production app-key acceptance or entitlement
+  (`IGW40342`); production per-app TPS behaviour; port 7070 behaviour; NXT
+  order paths; that the 2025-10-23 routing still applies on the test day;
+  or that chart routes are routed the same way.
+- The origin cannot reveal the environment. A production key labelled as
+  paper would silently reach production (also recorded in
+  `live-auth-transport-gates-2026-11-05.md` on `main` @ `a5d2639e`, L91–95,
+  where ADR 0015 adds explicit caller acknowledgements). KTradeLink
+  must carry environment provenance from configuration, never infer it, and
+  never fall back.
+- A WS test must pair the paper token with port 17070; mismatches are not
+  documented (§5.6 #5).
+
+### 5.8 Gates and not-verified items
+
+- Not verified: any paper or live response; paper market-data latency or
+  timestamps vs production; paper WS feed source; paper hours; paper TPS.
+- Gate: explicit separate authorization for paper credentials and for each
+  paper network call; orders (even paper) need their own authorization.
+- Gate: environment is a declared, recorded property of the credential
+  profile; mixing a paper token with production WS (or the reverse) must be
+  rejected before sending.
+- Gate: treat `00000` + "모의투자 데이터가 없습니다." as "no data from paper",
+  distinct from an empty production result.
 
 ## 6. Toss Securities
 
-`pending` — written separately; to be merged before review.
+### 6.1 Pinned sources
+
+Public Toss documents retrieved 2026-11-05 07:58:32–07:59:18 UTC. T1–T5 have
+the **same sha256** as the trade-evidence copies (07:10–07:11Z) and the
+inventory copies (06:55Z), so nothing changed during the day.
+
+| # | Path / URL | Pin | Used for |
+| --- | --- | --- | --- |
+| T1 | [openapi.json](https://openapi.tossinvest.com/openapi-docs/latest/openapi.json) | sha256 `c5918961335ccd6b`, 07:58:32Z; `openapi 3.1.0`, `info.version 1.2.28` | L8–12 `servers` (one entry); `components.securitySchemes.oauth2ClientCredentials`; `paths./oauth2/token`; `components.schemas.OAuth2TokenRequest` |
+| T2 | [overview.md](https://openapi.tossinvest.com/openapi-docs/overview.md) | sha256 `bef057d9babe9a38`, 07:58:34Z | L18, L36, L62, L89–97, L209–210, L236–264 |
+| T3 | [faq.md](https://openapi.tossinvest.com/openapi-docs/faq.md) | sha256 `6ad4c02b8e785f7d`, 07:58:35Z | L3, L9, L50 |
+| T4 | [developers.tossinvest.com/llms.txt](https://developers.tossinvest.com/llms.txt) | sha256 `bbff77eaa55df248`, 07:58:35Z | L9–10 servers; L16 T1 is source of truth |
+| T5 | [asyncapi.json](https://openapi.tossinvest.com/openapi-docs/latest/asyncapi.json) | sha256 `46669a360d4c5c64`, 07:58:35Z; `asyncapi 3.0.0`, `info.version 1.2.3` | `servers` has one key, `production` |
+| T6 | [api-reference/README.md](https://openapi.tossinvest.com/openapi-docs/latest/api-reference/README.md) | sha256 `39bc07740f869dbc`, 07:59:16Z | Search only |
+
+Search terms run over T1–T6 (case-insensitive): "모의", "sandbox",
+"샌드박스", "paper", "mock", "staging", "demo", "simulat", "테스트 환경",
+"dry run", "validateOnly". **No match** in any of them. The browser pages
+`developers.tossinvest.com/` and `/docs` (sha256 `c6c355fc66070915`,
+`23edd501b20d1587`, 07:59:17–18Z) are script shells with no static text on
+the topic.
+
+**Missing evidence:** any paper, sandbox, test-key or test-origin
+statement — **not found**.
+
+### 6.2 Does a paper environment exist?
+
+**Not found.** T1 has one server, `https://openapi.tossinvest.com`
+(L8–12); T5 has one WS server keyed `production`; T4 L9–10 lists one REST
+and one WS server. No document names 모의투자, sandbox or test mode.
+
+Key registration (process only, production): T2 L209 "토스증권 WTS에 로그인
+후 설정 > Open API 메뉴에 진입하여 `client_id` 와 `client_secret` 을
+발급받습니다."; L210 allow-listed IP registration is required ("등록된 허용
+IP 목록에 없는 IP 에서의 호출은 403 으로 차단됩니다").
+
+### 6.3 Origins and identifiers
+
+| Concern | Production | Paper | Evidence |
+| --- | --- | --- | --- |
+| REST origin | `https://openapi.tossinvest.com` | not found | T1 L8–12; T4 L9 (field table) |
+| WebSocket origin | `wss://openapi-ws.tossinvest.com/ws/v1` | not found | T5 `servers.production`; T4 L10 |
+| Token route / behaviour | `POST /oauth2/token`, form, `client_credentials`; "client 당 유효한 access token 은 1 개입니다. 재발급 시 이전에 발급된 token 은 즉시 무효화됩니다." (T1); FAQ: "새로 발급하면 직전 토큰은 즉시 무효화되어 `401 token-revoked` 로 거부됩니다." (T3 L9) | not found | T1 `paths./oauth2/token` description (field table); T3 L9 (publisher guide) |
+| TR-id / api-id differences | n/a (REST paths + `operationId`) | not found | T1 |
+| Required header differences | `Authorization: Bearer`; `X-Tossinvest-Account` for account, order and conditional-order groups only | not found | T2 L18, L36, L62 |
+
+The placeholder `client_id` in T1/T2 examples contains a `live` segment and
+no other variant is shown. **Inference:** this may hint at a key-type
+prefix, but no test key type is documented.
+
+### 6.4 Market-data route availability in paper
+
+No paper environment, so no route is paper-capable. Production routes, for
+reference: T2 L89–97 "Market Data — 시세".
+
+| Capability | Route | Paper supported? (verbatim) | Evidence |
+| --- | --- | --- | --- |
+| Current price | `GET /api/v1/prices` | not found (no paper environment) | T1, T2 L94 |
+| Order book | `GET /api/v1/orderbook` | not found | T1, T2 L93 |
+| Candles (1m, 1d) | `GET /api/v1/candles` | not found | T1, T2 L97 |
+| Trades | `GET /api/v1/trades` | not found | T1, T2 L95 |
+| Symbol master | `GET /api/v1/stocks`, `GET /api/v1/stocks/all` | not found | T1 |
+
+Account/order differences: none to name; account, order and
+conditional-order groups exist only against the single production server.
+
+### 6.5 Limits and data quality in paper
+
+Not applicable — no paper environment documented. Production limits for
+context only: "클라이언트 × API 그룹" TPS (T2 L236), e.g. `MARKET_DATA` "초당
+최대 15회" and `MARKET_DATA_CHART` "초당 최대 20회" (T2 L250–251), adjustable
+"사전 공지 없이" (T2 L238, L264). T3 L50 says Open API order hours follow
+the trading system ("매매 시스템의 주문 가능 시간을 그대로 따릅니다").
+
+### 6.6 Contradictions and gaps
+
+1. **OpenAPI version label.** T4 L16 calls T1 "OpenAPI 3.0"; T1 declares
+   `3.1.0` (already noted in the trade/candle ledgers).
+2. **Server naming.** T5 keys its only server `production`. **Inference:**
+   the name alone does not imply that another environment exists.
+3. No contradiction found about paper; absence is consistent across T1–T6.
+
+### 6.7 Implications for a first authorized smoke test (Inference only)
+
+- There is no non-production rehearsal. Before any live call, the only
+  evidence is offline: T1 schemas and examples as synthetic fixtures.
+- A first authorized test could only be production, read-only market data
+  (token only, no `X-Tossinvest-Account`), from an allow-listed IP.
+- Issuing a token revokes the client's previous token (T3 L9), so a smoke
+  test can disrupt any other process using the same client; this needs to
+  be part of the authorization.
+- Orders cannot be rehearsed anywhere; they stay out of scope.
+
+### 6.8 Gates and not-verified items
+
+- Not verified: absence of an undocumented sandbox (only documents were
+  read); any live behaviour.
+- Gate: no `PAPER` environment value may be offered for Toss; a request for
+  paper must fail closed rather than fall back to production.
+- Gate: explicit authorization for the production client, IP allow-list
+  entry and each live call; token issuance treated as a state-changing act.
 
 ## 7. Meritz Securities
 
-`pending` — written separately; to be merged before review.
+### 7.1 Pinned sources
+
+GitHub repository
+[`meritz-securities/open-api@a93c6409`](https://github.com/meritz-securities/open-api/tree/a93c6409db73ea97ad15f7b7186f36c9f32ecd89)
+(`a93c6409db73ea97ad15f7b7186f36c9f32ecd89`, committer date
+2026-10-28T22:32:03+09:00), fetched 07:54:54Z; blob SHAs from
+`git rev-parse`. Portal `https://openapi.imeritz.com` retrieved
+07:59:54–08:01:12Z. Repo README L11 makes the portal canonical, so repo text
+ranks below MP2/MP4.
+
+| # | Path / URL | Pin | Used for |
+| --- | --- | --- | --- |
+| M1 | [`README.md`](https://github.com/meritz-securities/open-api/blob/a93c6409db73ea97ad15f7b7186f36c9f32ecd89/README.md#L125) | blob `61aa5f7f2c1059a29a99175a5cdf573996d81479`; L125 | "모의계좌는 없습니다" |
+| M2 | [`llms.txt`](https://github.com/meritz-securities/open-api/blob/a93c6409db73ea97ad15f7b7186f36c9f32ecd89/llms.txt#L101-L120) | blob `8351d5343d785b61107179d19197c59a08e1edff`; L101, L109–118, L120 | Default server, real account, app key bound to its server, `mac_address` required |
+| M3 | [`DISCLAIMER.md`](https://github.com/meritz-securities/open-api/blob/a93c6409db73ea97ad15f7b7186f36c9f32ecd89/DISCLAIMER.md#L27) | blob `1ecb0ebd63232e1de6b33a11ce55728655627f84`; L4, L27 | Real account |
+| M4 | [`SECURITY.md`](https://github.com/meritz-securities/open-api/blob/a93c6409db73ea97ad15f7b7186f36c9f32ecd89/SECURITY.md#L23-L25) | blob `3ef48de49497587f4fc299a48af9a9a92660216c`; L23–25 | "모든 요청이 실계좌로 나간다고 전제하십시오." |
+| M5 | [`meritz/core/config.py`](https://github.com/meritz-securities/open-api/blob/a93c6409db73ea97ad15f7b7186f36c9f32ecd89/meritz/core/config.py#L1-L148) | blob `50f2c7f93bf329655afec252670a82018f45f976`; L3–4, L14–15, L72–74, L132–148 | Only `PROD`/`PROD_WS`; override → env "custom" (client code) |
+| M6 | repo `openapi.json` | blob `93e900e66b965607d7fd8b8e14c6088d710e6fce`; L8–11; `info.version` `2026-10-28` | Single server, description "운영" |
+| M7 | repo `asyncapi.json` | blob `c108c3c52288d5296b2871582ff856d532073242`; L8–10; `info.version` `2026-10-22` | Single WS server `prod` |
+| M8 | repo `meritz/data/catalog.json` | blob `000c2dbc636ad46077d4f46d67a04e0cd6fe1319` | Every API's `domain` has only a `prod` key (73 REST `…:9443`, 14 WS `…:29443/websocket`) |
+| M9 | [`docs/errors.md`](https://github.com/meritz-securities/open-api/blob/a93c6409db73ea97ad15f7b7186f36c9f32ecd89/docs/errors.md#L75-L92) | blob `b4b2eac6541bd2b886071c1caad17fa0c57ba3e6`; L75, L92 | `EGW00103` "개발 앱키를 운영 서버에 쓴 경우" |
+| M10 | [`CONTRIBUTING.md`](https://github.com/meritz-securities/open-api/blob/a93c6409db73ea97ad15f7b7186f36c9f32ecd89/CONTRIBUTING.md#L66-L67) | blob `aaecaa006ce9654f85c016de4bc9839197c62de9`; L66–67 | "테스트를 위해 실제 API 를 호출하지 말아 주십시오." |
+| MP1 | FAQ "Open API 모의투자 기능 있나요?" — `/api/forums/10000000-0000-0011-0000-000000000002/posts/356f5fc1-5db0-45c6-a0c1-53cdbaed104a` | sha256 `d9c3665bc59448e5`, 08:01:09Z; `createdDate` 2026-09-17T19:34+09:00 | Explicit "no paper" |
+| MP2 | [`/api-spec/download/json`](https://openapi.imeritz.com/api-spec/download/json) | sha256 `ce7c85787916484d`, 07:59:55Z, 1,136,519 bytes, `generatedAt "2026-11-05 16:55:11"`; normalised (without `generatedAt`, sorted keys) `2fff4f3e02d20cd5` — **identical** to the trade/candle copies | 0 matches for "모의", "mock", "demo", "paper", "sandbox", "simulat", "실계좌"; REST `domain` "" (72), WS `wss://openapi.imeritz.com:29443` (14) |
+| MP3 | [apiservice](https://openapi.imeritz.com/apiservice) (HTML) | sha256 `18fb34d1def00212`, 08:00:15Z | Row "모의투자 Domain" is `style="display: none;"` and the page script never shows it |
+| MP4 | `/api/apis/public/api-list/<group>` for all six groups (OAuth `1c647f61-…`, 계좌 `5bde10c9-…`, 국내주식 `441da3d2-…`, 해외주식 `7f77b304-…`, 실시간 국내 `6fdcbbbe-…`, 실시간 해외 `6e20c010-…`) | sha256 `e7b956b48f266bfa`, `6989ca0fea7f0184`, `8c33857167d5936b`, `e52b5391e440d4e0`, `75441f6745bc7d0a`, `5da357e2a2542546`; 08:00:28–08:00:33Z | 87 APIs; `simulatedDomain` **null for all 87** |
+| MP5 | [testbed-lab](https://openapi.imeritz.com/testbed-lab) | sha256 `87bcdc6b679b0ceb`, 08:00:48Z | "테스트베드" sends no request |
+| MP6 | [samplecode-py](https://openapi.imeritz.com/samplecode-py) | sha256 `77f8489abbfb238e`, 08:00:47Z (varies per request) | "모의계좌가 아니라 실제 계좌"; one WS endpoint |
+| MP7 | FAQ "Open API 운영 시간은 어떻게 되나요?" — same forum, post `a40ed3f5-c115-45c4-979e-a9b5db7abbf0` | sha256 `2b075a23450609b3`, 08:01:10Z; `createdDate` 2026-09-17 | Production query hours |
+| MP8 | [about-openapi](https://openapi.imeritz.com/about-openapi) | sha256 `9379807871280d02`, 08:00:42Z | "테스트베드 메뉴에서 테스트가 가능합니다." |
+
+Evidence levels: MP2, MP4 `field table`; MP1, MP3, MP5–MP8 `publisher
+guide`; M1–M4, M9–M10 `publisher repo note`; M5–M8 `publisher client code`
+or machine-readable repo data below MP2.
+
+**Missing evidence:** no development/test origin is published, although M9
+and M2 refer to app keys of other servers (§7.6 #1).
+
+### 7.2 Does a paper environment exist?
+
+**No (explicitly).** MP1: "현재 메리츠증권에서는 Open API 모의투자 기능을
+제공하지 않습니다. 양해 부탁드리며, 향후 서비스 제공 계획이 있을 경우 별도
+안내드리도록 하겠습니다." Consistent repo notes: M1 L125 "앱키에 연결된
+계좌는 실계좌입니다. 모의계좌는 없습니다"; M3 L27; M4 L23–24; M10 L66–67;
+MP6 "APP KEY 에 연결된 계좌는 모의계좌가 아니라 실제 계좌입니다."
+
+The portal "테스트베드" is **not** a paper environment. MP5: "※ 본 화면은
+개발 참고용 예시 화면으로, 실제 API 호출 및 실행 기능은 제공되지 않습니다."
+and "모의 테스트입니다. 실제 API로 요청을 보내지 않고, API 가이드의 요청,
+응답 예시를 보여 드립니다."
+
+### 7.3 Origins and identifiers
+
+| Concern | Production | Paper | Evidence |
+| --- | --- | --- | --- |
+| REST origin | `https://openapi.imeritz.com:9443` | not found (portal `simulatedDomain` null for all APIs) | MP4 (field table); M6 L8–11 ("운영"); M8; M5 L14 |
+| WebSocket origin | `wss://openapi.imeritz.com:29443/websocket` | not found | MP4; M7 L8–10; MP6 "접속점은 이것 하나입니다" |
+| Token route / behaviour | `POST /oauth2/token` (form, `scope=login`, per the auth gates doc on `main` @ `a5d2639e` L18) | not found | MP4 OAuth group; M8 |
+| TR-id / api-id differences | n/a | not found | — |
+| Required header differences | `mac_address` required: "**`mac_address` 헤더가 필수입니다.** 빠지면 요청이 거부됩니다." | not found | M2 L101 (repo note); how it is produced is out of scope and not described here |
+
+### 7.4 Market-data route availability in paper
+
+No paper environment, so no route is paper-capable ("현재 … 모의투자 기능을
+제공하지 않습니다", MP1).
+
+| Capability | Route | Paper supported? (verbatim) | Evidence |
+| --- | --- | --- | --- |
+| Current price, order book, candles, trades | 국내주식 group (30 REST APIs, e.g. `/market/v1/trades/ticks`) | "모의투자 기능을 제공하지 않습니다" | MP1; MP4 `simulatedDomain` null |
+| Symbol master | `.mst` files (stock-info page; not paper-related) | same | MP1 |
+| Real-time | 실시간 국내주식 (9 WS APIs) | same | MP1; MP4 |
+
+Account/order differences: none to name — every order goes to the real
+account bound to the app key (M2 L111–112; M3 L24–27).
+
+### 7.5 Limits and data quality in paper
+
+Not applicable. Production context only: MP7 "점검일 등 예외 사항이 없을 시,
+24시간 조회 가능합니다."; M2 L120 "초당 호출 한도는 API마다 10건입니다."
+(the capability inventory records a per-account reading of a portal notice;
+not re-checked here).
+
+### 7.6 Contradictions and gaps
+
+1. **Other servers are implied but not published.** M9 L92: `EGW00103`
+   "앱키 오타, 또는 **개발 앱키를 운영 서버에 쓴 경우**"; M2 L114 "앱키는
+   발급받은 서버에서만 통합니다."; M5 L4 "앱키는 발급받은 환경에서만 통한다."
+   No such server appears in MP2, MP4, M6–M8. **Inference:** a non-public
+   development environment may exist; it is not offered as a paper
+   environment (MP1) and must not be treated as one.
+2. **"테스트" wording.** MP8 "테스트베드 메뉴에서 테스트가 가능합니다." reads
+   like a test environment, but MP5 shows it only replays guide examples.
+3. **Hidden portal row.** MP3 has a "모의투자 Domain" row that is never
+   displayed. **Inference:** a portal-template remnant (the DB portal uses the
+   same row and `simulatedDomain` field, DP1), not a feature.
+4. **Spec export has no REST origin.** MP2 REST `domain` is "" for 72 APIs;
+   the origin must come from MP4 or M6, not from MP2.
+5. **Client override.** M5 L132–148 lets `MERITZ_BASE_URL` point elsewhere
+   ("custom") and then requires an explicit `MERITZ_WS_URL`; client code
+   only, no documented target.
+
+### 7.7 Implications for a first authorized smoke test (Inference only)
+
+- Every authorized call is production against a **real account**. The first
+  test, if any, should be one read-only market-data call; account and order
+  routes stay out of scope.
+- The mandatory `mac_address` header (M2 L101) means even a read-only test
+  needs a separately authorized decision on what value is sent; automatic
+  device discovery is not an acceptable default.
+- All errors arrive as HTTP 500 with `rsp_cd` (auth gates doc on `main` @
+  `a5d2639e`, L18, L96–98), so a smoke test proves little unless `rsp_cd` is interpreted.
+- Paper cannot be used to de-risk anything; offline fixtures from MP2
+  examples are the only pre-live evidence.
+
+### 7.8 Gates and not-verified items
+
+- Not verified: existence or behaviour of any development server (§7.6 #1);
+  any live behaviour.
+- Gate: no `PAPER` environment for Meritz; a paper request must fail closed.
+- Gate: explicit authorization for production credentials, the
+  `mac_address` value and each live call; no order path without its own
+  authorization and a duplicate-order safeguard.
 
 ## 8. Cross-broker comparison and paper-first smoke-test scope
 
@@ -601,14 +1034,14 @@ master) are served in paper.
 
 | Property | KIS | Kiwoom REST | LS | DB | Toss | Meritz |
 | --- | --- | --- | --- | --- | --- | --- |
-| Paper REST origin distinct from production | yes | yes | not documented | pending | pending | pending |
-| Paper WS origin distinct | yes (port only, plain `ws://`) | yes | yes (`simulationUrl`) | pending | pending | pending |
-| Separate paper app key | yes | yes | yes | pending | pending | pending |
-| Machine-readable per-route paper availability | **yes** (portal `virtualDomain` / `virtualTrId`) | no (one prose note + `8104`) | no | pending | pending | pending |
-| Market-data TR / api id changes in paper | no | no | not documented | pending | pending | pending |
-| Documented paper rate limit | 1 req/s REST, token 1/s | not found | not found | pending | pending | pending |
-| Documented env-mismatch error | `MCA00124` (paper key on production origin) | `8030`, `8031` | not found | pending | pending | pending |
-| Paper data quality / hours documented | no (fills follow real executions) | no | fills only 09:00–15:30 | pending | pending | pending |
+| Paper REST origin distinct from production | yes | yes | not documented | **no**: same origin, the app key selects | no paper | no paper |
+| Paper WS origin distinct | yes (port only, plain `ws://`) | yes | yes (`simulationUrl`) | yes (port 17070) | no paper | no paper |
+| Separate paper app key | yes | yes | yes | yes | — | — |
+| Machine-readable per-route paper availability | **yes** (portal `virtualDomain` / `virtualTrId`) | no (one prose note + `8104`) | no | repo matrix ⭕/❌ (D3); portal `simulatedDomain` null for REST; the portal phrase rule contradicts the matrix | n/a | `simulatedDomain` null for all 87 APIs |
+| Market-data TR / api id changes in paper | no | no | not documented | no | n/a | n/a |
+| Documented paper rate limit | 1 req/s REST, token 1/s | not found | not found | none paper-specific; WS 40 sessions per port incl. paper | n/a | n/a |
+| Documented env-mismatch error | `MCA00124` (paper key on production origin) | `8030`, `8031` | not found | none documented; WS `10009` is a candidate (inference) | n/a | `EGW00103` "개발 앱키를 운영 서버에 쓴 경우" (not paper) |
+| Paper data quality / hours documented | no (fills follow real executions) | no | fills only 09:00–15:30 | REST quotes come from the production quote system (DP11); WS source and hours not documented | n/a | n/a |
 
 ### 8.2 Proposed paper-first smoke-test scope (Inference)
 
@@ -616,15 +1049,28 @@ This is a proposal for the maintainer, not an authorization. Every item
 needs an explicit, separate authorization naming the broker, environment,
 credentials owner, routes and request count.
 
-1. **Order:** KIS paper, then Kiwoom paper. LS has no documented paper REST
-   path (§4.7). DB/Toss/Meritz: pending.
+1. **Order and per-broker verdict:**
+
+   | Broker | Paper smoke? | Why |
+   | --- | --- | --- |
+   | KIS | **first** | distinct paper origin and keys; per-route field table marks the ticker, order book, day and today's-minute candles and trades as paper-offered (§2.4) |
+   | Kiwoom REST | **second** | distinct paper origin and keys; per-route service unknown, so the first call also shows whether `ka10001` is served or `8104` (§3.7) |
+   | DB | **possible, with a caveat** | paper keys exist, but paper and production share one REST origin and the key alone selects the environment, and since 2025-10-23 paper REST quotes are served by the production quote system (DP11). A DB paper call therefore tests paper auth plus **production** market data, and a mislabelled production key would silently reach production (§5.7). KTradeLink currently refuses DB paper (§9). |
+   | LS | **none** | no documented paper REST origin (§4.7) |
+   | Toss | **none** | no paper environment found (§6.2) |
+   | Meritz | **none** | explicitly no paper (MP1); the testbed sends no requests (MP5); any other server implied by `EGW00103` is an inference and is **not** a paper environment (§7.6 #1) |
+
+   For LS, Toss and Meritz the only pre-live evidence is offline; any
+   first network check would be a separately authorized **production**
+   read.
 2. **Per broker, at most:** one token request; one ticker request for one
    KRX symbol; optionally one order-book and one day-candle request on
-   routes the publisher marks as paper-offered (KIS) or observes as served
-   (Kiwoom). No WebSocket, no account, no order route.
-3. **Pacing:** at least one second between KIS paper requests (K27). No
-   automatic retry of any request, including after `EGW00201`, `1700`
-   series, HTTP 5xx or a timeout.
+   routes the publisher marks as paper-offered (KIS, DB matrix) or observes
+   as served (Kiwoom). No WebSocket, no account, no order route.
+3. **Pacing:** at least one second between KIS paper requests (K27); DB
+   token issuance is "1분에 1건" (DP5). No automatic retry of any request,
+   including after `EGW00201`, the `1700` series, `IGW00201`, `M001`,
+   HTTP 5xx or a timeout.
 4. **Record:** HEAD SHA, environment, origin, route, HTTP status, root
    status field and value, error code if any, and the delivery state —
    never the token, keys, account values or raw body (only sanitized,
@@ -634,16 +1080,24 @@ credentials owner, routes and request count.
    environment; header names accepted; that the TR / api id is served in
    paper; the status envelope (`rt_cd`, `return_code`) and decoder field
    names on a real paper response; the error code for an unsupported
-   route (`8104`) or mismatched key (`MCA00124`, `8030`/`8031`).
-6. **Paper cannot show:** production origin, TLS and availability;
-   production entitlements; production rate limits (KIS 18/s vs 1/s);
-   production-only routes (KIS by-date minutes, symbol info, holidays,
-   VI); NXT / 통합 / SOR venues; whether paper quotes equal production
-   quotes in value, timing or sign; production token lifetime and
-   re-issue behaviour; production error universes; anything about
+   route (`8104`) or mismatched key (`MCA00124`, `8030`/`8031`); for DB,
+   the decoding of production-sourced quote payloads under a paper key
+   and the paper-only `rsp_cd` messages.
+6. **Paper cannot show:** production origin, TLS and availability (except
+   that DB's paper REST origin *is* the production origin); production app
+   keys, entitlements and acceptance (e.g. DB `IGW40342`); production rate
+   limits (KIS 18/s vs 1/s; DB per-app buckets); production-only routes
+   (KIS by-date minutes, symbol info, holidays, VI); NXT / 통합 / SOR
+   venues; whether paper quotes equal production quotes in value, timing
+   or sign (for DB only the REST source is stated, not latency; the paper
+   WS source is undocumented); that DB's 2025-10-23 routing still applies
+   on the test day or covers the chart group; production token lifetime
+   and re-issue behaviour; production error universes; anything about
    accounts or orders (KIS paper fills are simulated by a separate
-   operator, K25/K30). A paper success therefore leaves every
-   `documented_candidate` capability at that state for production.
+   operator, K25/K30; DB paper offers fewer order types). Nothing about
+   LS, Toss or Meritz production can be learned from any paper call. A
+   paper success therefore leaves every `documented_candidate` capability
+   at that state for production.
 
 ## 9. Relation to existing code and documents
 
@@ -652,7 +1106,9 @@ are recorded only.
 
 | Code or document and claim | This audit |
 | --- | --- |
-| `src/ktradelink/_request_plan.py` `_LIVE_ORIGINS` / `_PAPER_ORIGINS`: KIS paper `https://openapivts.koreainvestment.com:29443`, Kiwoom paper `https://mockapi.kiwoom.com`; no LS/DB/Toss/Meritz paper origin | **Matches** K11–K17, K19–K21 (KIS) and W1/W2 (Kiwoom). LS has no documented paper REST origin (§4.3), so its absence matches. DB/Toss/Meritz: pending. |
+| `src/ktradelink/_request_plan.py` `_LIVE_ORIGINS` / `_PAPER_ORIGINS`: KIS paper `https://openapivts.koreainvestment.com:29443`, Kiwoom paper `https://mockapi.kiwoom.com`; no LS/DB/Toss/Meritz paper origin | **Matches** K11–K17, K19–K21 (KIS) and W1/W2 (Kiwoom). LS has no documented paper REST origin (§4.3); Toss (§6.2) and Meritz (§7.2) have no paper environment; their absence matches. **DB differs:** DB documents paper on the **same** REST origin `https://openapi.dbsec.co.kr:8443` (D1 L13–14, D2 L693), so DB paper is refused by the planner (`environment_not_documented`) although the publisher offers it. |
+| DB `live` path (ADR 0015 gate 2; `_token_codec` `db_production_key_acknowledged`) | **Consistent** with §5.2/§5.7: the origin cannot tell paper from production, so a paper (`vtl_`) key used under `live` would reach the paper system, and a production key labelled as paper would reach production. The acknowledgement records the caller's claim; it does not verify it. ADR 0015's "only the `live` label exists" stands. |
+| `_https_transport` / `_public_client`: Toss and Meritz offer `live` only | **Matches** §6 and §7 (no paper). |
 | `_request_plan._origin`: only `"live"` / `"paper"`; unknown or undocumented environment raises `QuotePlanUnavailable`; origins are never taken from callers | Consistent with G-P1. Differs from the publisher clients' environment-variable origin override (Kiwoom W3 L42–59; KIS MCP `KIS_URL_REST_PAPER`), which is not adopted. |
 | `authentication_requirements`: KIS token path `/oauth2/tokenP`, Kiwoom `/oauth2/token`, on the environment's origin | **Matches** K11 (token offered on VTS) and W1 au10001 (mock domain listed). |
 | `plan_ticker_request` KIS: `tr_id` `FHKST01010100` in both environments, `fid_cond_mrkt_div_code=J` | **Matches** K12/K17 (`virtualTrId` `FHKST01010100`). KRX-only matches the paper venue limitation (K29). The planner does not rewrite TR ids; no rewrite is needed for `F…` ids (K2 L453–455 rewrites only `T`/`J`/`C`). |
@@ -676,7 +1132,13 @@ are recorded only.
 | [order-book evidence](order-book-evidence-2026-11-05.md): KIS `FHKST01010200` for `real` and `demo` | **Confirmed** (K12). |
 | [Candle evidence](candle-evidence-2026-11-05.md) (on `main` since PR #31) §2.7 item 3 (L253–255): by-date minute route `FHKST03010230` "Paper support is therefore unknown"; G-gate L1366 "[KIS] by-date minute paper availability is undocumented" | **Resolved by field table:** "모의투자 미지원" / "모의투자 미지원" (K12, record dated 2026-08-12T15:53:16+09:00). That file could cite K12; not changed here. |
 | [Trade evidence](trade-evidence-2026-11-05.md) (on `main` since PR #33) G-H2 (L1482–1485): "identical [KIS] TR ids"; "[LS] documents no paper REST origin" | **Confirmed**; all three KIS trade routes are paper-offered (K12). |
-| Symbol-master evidence (branch `claude/issue-17-symbol-master-evidence` @ `b127724ee73fac239d987a2fa2a5b889c5f92bfb`, not merged): LS "No REST paper origin is documented" | **Confirmed**. KIS `CTPF1002R` / `CTPF1604R` are "모의투자 미지원" (K13). |
+| Symbol-master evidence (branch `claude/issue-17-symbol-master-evidence` @ `b127724ee73fac239d987a2fa2a5b889c5f92bfb`, not merged): LS "No REST paper origin is documented" | **Confirmed**. KIS `CTPF1002R` / `CTPF1604R` are "모의투자 미지원" (K13). Its DB legend "⭕ — 모의투자(`mode: "demo"`) + 실전투자 모두 호출 가능" (D3) is the same source as §5.4. |
+| live-auth-transport-gates, DB row and DB gate (L91–95): "Live and demo share one REST origin (the app key decides)"; "a mislabelled live/demo app key is undetectable by the transport" | **Confirmed** (D1 L13, D2 L693, D8 L29). New: since 2025-10-23 paper REST quotes are served by the production quote system (DP11). |
+| Same ledger, Meritz row and gate (L18, L96–98): every error is HTTP 500 with `rsp_cd` | Not paper-specific; Meritz has no paper (MP1). |
+| Capability inventory row "Orders: documented paper env" (DB ✓, Toss ✗, Meritz ✗) and notes ("D1 … 모의투자 ⭕/❌"; Meritz "real account, not a mock account") | **Consistent** with §5–§7 (orders named only). |
+| Capability inventory, Meritz notes: "M2 has no 모의투자 domain for any API" | **Confirmed** for all 87 APIs (MP4) and now backed by an explicit FAQ (MP1). |
+| Candle evidence §5 (DB): `00000` can also mean "모의투자 데이터가 없습니다." | **Consistent** (D4 L108); §5.6 #2 adds that the DP11 routing leaves open whether market-data routes can still return it. |
+| Trade evidence G-H2: "[DB] ⭕ in the SDK matrix on one shared origin"; "[Toss] none"; "[Meritz] has **no paper environment**" | **Confirmed**; DB chart-group paper support rests on D2/D3 only (§5.6 #1). |
 
 ## 10. Gates
 
@@ -693,37 +1155,61 @@ or live call. Broker tags are in brackets.
     never used for the other ([KIS] K2 L88–104 is the counter-example).
   - An error in one environment never triggers a request to the other.
   - [LS] paper stays refused until a paper REST origin is documented.
+  - [DB] the origin cannot reveal the environment; it is a declared,
+    recorded property of the credential profile (ADR 0015
+    acknowledgements), never inferred, and a paper token is never paired
+    with the production WS port 7070 or a production token with 17070.
+    The DB SDK's default `mode` `"demo"` (D5 L122) is not a model.
+  - [Toss] [Meritz] no `paper` value is offered; a paper request fails
+    closed and never falls back to production. A [Meritz] development
+    server implied by `EGW00103` (M9 L92) is not a paper environment.
 - **G-P2 Paper success is not production evidence.** A paper response
   does not change any production capability state, fixture provenance,
   rate-limit assumption, venue claim or decoder contract (§8.2 item 6).
   Paper fixtures must be labelled with their environment and never used
-  as production fixtures.
+  as production fixtures. [DB] Even though paper REST quotes come from the
+  production quote system (DP11), a DB paper success does not prove
+  production keys, entitlements, limits or the WS feed.
 - **G-P3 Environment-mismatch errors are configuration errors.**
-  [KIS] `MCA00124` (K20), [Kiwoom] `8030` / `8031` (W1): surface them, do
-  not retry and do not switch environments.
+  [KIS] `MCA00124` (K20), [Kiwoom] `8030` / `8031` (W1), [DB] WS `10009`
+  and `10005` (D4, candidates only), [Meritz] `EGW00103` (M9): surface
+  them, do not retry and do not switch environments.
 - **G-P4 Paper-unsupported routes fail closed.** [KIS] routes marked
   "모의투자 미지원" (K12–K16) must be refused offline for `paper` before
   anything is sent, if they are ever planned. [Kiwoom] `8104` surfaces as
-  an unsupported capability, not as a reason to try production.
+  an unsupported capability, not as a reason to try production. [DB]
+  `M100` "모의투자에서는 해당업무가 제공되지 않습니다." likewise. [DB]
+  Success `00000` with "모의투자 데이터가 없습니다." means "no data from
+  paper", never an empty production result (§5.6 #2).
 - **G-P5 No automatic retries, in paper too.** Publisher advice to retry
   ([KIS] K27 "즉시 재호출", [LS] L8 "재시도하도록 구현하세요") is not
   adopted. [KIS] paper is 1 REST request per second and 1 token request
-  per second (K27); any smoke test paces manually.
+  per second (K27); [DB] token "1분에 1건" (DP5) and `M001` "서비스가
+  지연처리되고 있습니다" (D4 L161) are not retry triggers; any smoke test
+  paces manually.
 - **G-P6 Trading TRs and ledger selection.** [KIS] the TR id can select
   the ledger regardless of origin (K19), and trading TR ids differ
   (`T…`/`V…`). No KTradeLink code may rewrite TR ids automatically.
   Account and order routes stay out of scope and need their own
-  authorization in every environment.
+  authorization in every environment. [Meritz] every order reaches a
+  real account (M2, M3) and needs a duplicate-order safeguard as well.
 - **G-P7 Venue in paper.** [KIS] paper trading is KRX only and NXT is not
   supported (K29); NXT/통합 paper feeds are "모의투자 미지원" (K15). Paper
   quote requests stay KRX-only; NXT/SOR/통합 behaviour can only be
-  learned in production under separate authorization.
+  learned in production under separate authorization. [DB] NXT order
+  TRs `CSPAT00610/00710/00810` are ❌ in paper (D3; named only).
 - **G-P8 Transport.** [KIS] paper and production WebSocket origins are
   plain `ws://`; WebSocket is out of scope until a transport-security
   decision exists. [LS] paper WS has only a server-level `simulationUrl`.
+  [DB] paper WS is a separate port (17070) whose data source is not
+  documented.
 - **G-P9 Authorization.** Real authentication, any network call (paper
   included), account access and orders each need explicit, separate
   maintainer authorization. Nothing runs in CI. No secret discovery.
+  [Toss] token issuance revokes the client's previous token (T1, T3 L9)
+  and is a state-changing act; calls come only from an allow-listed IP
+  (T2 L210). [Meritz] the required `mac_address` value (M2 L101) needs
+  its own decision; no device discovery.
 
 ## 11. Not verified
 
@@ -748,6 +1234,15 @@ or live call. Broker tags are in brackets.
   - how a paper REST request is routed (origin, token, TR id);
   - which market-data TRs exist in paper; paper limits and data quality;
   - LS notices (forum endpoints answered 302).
-- DB, Toss, Meritz: pending (§5–§7).
+- DB:
+  - paper market-data latency and timestamps versus production; the
+    paper WebSocket feed source; paper hours and paper TPS;
+  - whether the 2025-10-23 routing (DP10/DP11) still applies and covers
+    the chart group (`CHARTMIN`, `CHARTDAY`);
+  - whether market-data routes can still return `00000` "모의투자 데이터가
+    없습니다.";
+  - the error, if any, for a paper token on port 7070 or the reverse.
+- Toss: absence of an undocumented sandbox (only documents were read).
+- Meritz: existence or behaviour of any development server (§7.6 #1).
 - Entitlements, paper/production data parity and redistribution rights for
   all brokers (not researched).
