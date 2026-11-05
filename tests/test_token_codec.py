@@ -33,8 +33,12 @@ def setup(broker):
 def test_token_example_parses_exact_publisher_expiry_and_scoped_cache(broker,fields):
     identity,provider,req=setup(broker)
     cache=InMemoryTokenCache()
+    fields = {**fields, 'token_type': 'Bearer'}
     response=WireResponse(req,200,json.dumps(fields).encode('utf-8'))
-    issued=save_example_token_response(response,identity,provider,cache,now_ms=0)
+    issued=save_example_token_response(
+        response,identity,provider,cache,now_ms=0,
+        kis_expiry_timezone=KST if broker == 'kis' else None,
+    )
     expected=int(datetime(2027,1,2,12,1,3,tzinfo=KST).timestamp()*1000)
     assert issued.expires_at_ms==expected
     assert cache.get(provider,identity,now_ms=expected-1) is issued

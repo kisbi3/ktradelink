@@ -35,6 +35,19 @@ secret acquisition outside this repository. The in-memory token cache expects
 explicit expiry and credentials; it never refreshes automatically. The private
 KIS/Kiwoom token parser can read a synthetic publisher-example response and
 save an explicitly scoped, expiring lease, but it does not contact a broker.
+Token type must be explicit, and Kiwoom's return_code must be integer zero.
+KIS's sample expiry has no timezone information: `save_example_token_response`
+requires an explicit `kis_expiry_timezone=datetime.timezone(...)` for a valid
+KIS response. Do not guess this for production. Synthetic test offsets are not
+publisher evidence. Missing timezone context fails without caching a token.
+
+Wire headers and body cannot override the canonical builder's request. A
+prepared request is rechecked against current credentials and, for quotes,
+the exact current token immediately before connect and HTTP write. Rotation,
+revocation or expiration requires rebuilding it; there is no automatic refresh.
+The default send-time clock is UTC epoch milliseconds; `now_ms` is an explicit
+test clock override, not permission to extend the life of an actual token.
+Concurrent modification across threads/processes is not supported or attested.
 
 A production real HTTPS client would need a **separate reviewed authorization**
 and explicit opt-in. Even then, only two broker token request/response candidates
@@ -46,9 +59,12 @@ untrusted; the SDK does not map them into a public Ticker or infer exchange/time
 
 ### Failure semantics
 
-The HTTPS transport uses a bounded timeout, certificate and hostname validation,
-no redirect following, no ambient proxy and no automatic retry. Its delivery
-state differentiates `NOT_SENT`, `UNKNOWN` and `RESPONSE_RECEIVED`. A write error
+The HTTPS transport uses a bounded **socket-operation** timeout, certificate
+and hostname validation, no redirect following, no ambient proxy and no
+automatic retry. This is not a total elapsed-time or DNS deadline: slow progress
+can exceed the configured interval overall. Absolute cancellation remains a
+production integration gate. TLS contexts do not enable SSLKEYLOGFILE logging.
+Its delivery state differentiates `NOT_SENT`, `UNKNOWN` and `RESPONSE_RECEIVED`. A write error
 or missing HTTP status could mean the server has already seen the request;
 **never automatically replay a non-idempotent operation**. HTTP 401/403/429,
 5xx, other statuses and oversized response bodies have static error kinds, not

@@ -9,12 +9,16 @@ proxies, retries, account calls or orders. Not a public fetch_ticker adapter.
 import http.client
 import json
 import ssl
+import time
 from dataclasses import dataclass, field
 from enum import Enum
 from urllib.parse import urlencode, urlsplit
 
 from ktradelink._credential_runtime import (
+    BearerLease,
+    CredentialError,
     CredentialIdentity,
+    CredentialPair,
     CredentialSnapshot,
     InMemoryCredentialProvider,
     InMemoryTokenCache,
@@ -38,6 +42,8 @@ class DeliveryState(Enum):
 class TransportFailure(Enum):
     INVALID_REQUEST = "invalid_http_request"
     NOT_ENABLED = "real_network_disabled"
+    STALE_CREDENTIAL = "credential_changed_before_send"
+    TOKEN_UNAVAILABLE = "token_invalid_before_send"
     EVIDENCE_MISSING = "broker_wire_contract_not_verified"
     CONNECT = "https_connect_failed"
     TLS = "tls_handshake_failed"
@@ -83,6 +89,9 @@ class WireRequest:
     purpose: str
     credential_snapshot: CredentialSnapshot | None = field(default=None, repr=False, compare=False)
 
+    bearer_lease: BearerLease | None = field(default=None, repr=False, compare=False)
+    token_cache: InMemoryTokenCache | None = field(default=None, repr=False, compare=False)
+
     def __repr__(self) -> str:
         return "WireRequest(<redacted>)"
 
@@ -118,6 +127,9 @@ class WireRequest:
             _reject(TransportFailure.INVALID_REQUEST)
 
         if (type(self.credential_snapshot) is not CredentialSnapshot
+                or type(self.credential_snapshot.identity) is not CredentialIdentity
+                or type(self.credential_snapshot.pair) is not CredentialPair
+                or type(self.credential_snapshot.owner) is not InMemoryCredentialProvider
                 or self.credential_snapshot.identity.broker != self.source.broker
                 or self.credential_snapshot.identity.environment != self.source.environment):
             _reject(TransportFailure.INVALID_REQUEST)
@@ -140,14 +152,20 @@ class WireRequest:
             _reject(TransportFailure.INVALID_REQUEST)
         sensitive = {"appkey", "appsecret", "appsecretkey", "secretkey", "client_secret",
                      "client_id", "authorization", "token", "access_token", "password"}
-        for key, value in self.query:
+        for item in self.query:
+            if type(item) is not tuple or len(item) != 2:
+                _reject(TransportFailure.INVALID_REQUEST)
+            key, value = item
             if (type(key) is not str or type(value) is not str or key.lower() in sensitive
                     or any(c in key + value for c in "\r\n\x00")):
                 _reject(TransportFailure.INVALID_REQUEST)
         if len(self.headers) > 32:
             _reject(TransportFailure.INVALID_REQUEST)
         seen: set[str] = set()
-        for name, value in self.headers:
+        for item in self.headers:
+            if type(item) is not tuple or len(item) != 2:
+                _reject(TransportFailure.INVALID_REQUEST)
+            name, value = item
             if (type(name) is not str or type(value) is not str
                     or not name or not name.isascii() or not all(
                         c.isalnum() or c in "-_" for c in name
@@ -159,6 +177,34 @@ class WireRequest:
         if len(self.body or b"") > MAX_RESPONSE_BYTES:
             _reject(TransportFailure.INVALID_REQUEST)
         if self.method == "GET" and self.body is not None:
+            _reject(TransportFailure.INVALID_REQUEST)
+
+        # Validate the entire wire shape, not only its destination. No arbitrary
+        # Host/framing headers, alternate symbols, or unrelated secret payloads.
+        pair = self.credential_snapshot.pair
+        if self.purpose == "token":
+            if self.bearer_lease is not None or self.token_cache is not None:
+                _reject(TransportFailure.INVALID_REQUEST)
+            key_name, secret_name = self.source.credential_field_names
+            expected_body = json.dumps({
+                "grant_type": "client_credentials",
+                key_name: pair.client_key,
+                secret_name: pair.client_secret,
+            }, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+            expected_headers = (("content-type", "application/json;charset=UTF-8"),)
+        else:
+            if (type(self.bearer_lease) is not BearerLease
+                    or type(self.token_cache) is not InMemoryTokenCache
+                    or self.bearer_lease.snapshot is not self.credential_snapshot):
+                _reject(TransportFailure.INVALID_REQUEST)
+            expected_headers = self.source.public_headers + (
+                ("authorization", f"Bearer {self.bearer_lease.access_token}"),
+            )
+            if self.source.broker == "kis":
+                expected_headers += (("appkey", pair.client_key), ("appsecret", pair.client_secret))
+            expected_body = (self.source.json_body.encode("utf-8")
+                             if self.source.json_body is not None else None)
+        if self.body != expected_body or self.headers != expected_headers:
             _reject(TransportFailure.INVALID_REQUEST)
 
 
@@ -243,7 +289,7 @@ def build_quote_request(
     return WireRequest(
         plan, plan.method, plan.origin, plan.path, plan.query,
         tuple(headers), plan.json_body.encode("utf-8") if plan.json_body is not None else None,
-        "quote", credential_snapshot=credential,
+        "quote", credential_snapshot=credential, bearer_lease=lease, token_cache=tokens,
     )
 
 
@@ -261,6 +307,23 @@ def _http_kind(status: int) -> TransportFailure | None:
     if 500 <= status <= 599:
         return TransportFailure.SERVER
     return TransportFailure.HTTP
+
+
+def _binding_failure(request: WireRequest, now_ms: int) -> TransportFailure | None:
+    snapshot = request.credential_snapshot
+    provider = snapshot.owner
+    try:
+        provider.require_current(snapshot)
+    except CredentialError:
+        return TransportFailure.STALE_CREDENTIAL
+    if request.purpose == "quote":
+        try:
+            current_lease = request.token_cache.get(provider, snapshot.identity, now_ms=now_ms)
+        except CredentialError:
+            return TransportFailure.TOKEN_UNAVAILABLE
+        if current_lease is not request.bearer_lease:
+            return TransportFailure.TOKEN_UNAVAILABLE
+    return None
 
 
 class HttpsTransport:
@@ -283,7 +346,7 @@ class HttpsTransport:
     def __repr__(self) -> str:
         return "HttpsTransport(<redacted>)"
 
-    def send(self, request: WireRequest) -> WireResponse:
+    def send(self, request: WireRequest, *, now_ms: int | None = None) -> WireResponse:
         """One HTTPS attempt; no reconnect, refresh, retry, or downstream decode."""
         if type(request) is not WireRequest:
             _reject(TransportFailure.INVALID_REQUEST)
@@ -291,6 +354,14 @@ class HttpsTransport:
         request.__post_init__()
         if not self._enabled:
             _reject(TransportFailure.NOT_ENABLED)
+        injected_clock = now_ms is not None
+        if now_ms is None:
+            now_ms = time.time_ns() // 1_000_000
+        if type(now_ms) is not int or now_ms < 0:
+            _reject(TransportFailure.INVALID_REQUEST)
+        binding_failure = _binding_failure(request, now_ms)
+        if binding_failure is not None:
+            _reject(binding_failure)
         parsed = urlsplit(request.origin)
         target = request.path
         if request.query:
@@ -303,7 +374,10 @@ class HttpsTransport:
         state = DeliveryState.NOT_SENT
         try:
             try:
-                context = ssl.create_default_context()
+                # Unlike create_default_context(), this does not inspect
+                # SSLKEYLOGFILE and cannot start ambient TLS session-key logging.
+                context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+                context.load_default_certs(ssl.Purpose.SERVER_AUTH)
                 # The SDK never disables system CA verification or hostname checking.
                 if context.verify_mode != ssl.CERT_REQUIRED or not context.check_hostname:
                     failure = TransportFailure.TLS
@@ -318,6 +392,10 @@ class HttpsTransport:
             except Exception:
                 failure = TransportFailure.CONNECT
 
+            if failure is None:
+                # A slow handshake must not make a revoked/expired lease usable.
+                before_write_ms = now_ms if injected_clock else time.time_ns() // 1_000_000
+                failure = _binding_failure(request, before_write_ms)
             if failure is None:
                 state = DeliveryState.UNKNOWN  # any write failure may be partial
                 try:

@@ -9,7 +9,7 @@ publisher deployment and credential requirements can differ from examples.
 
 | Broker | Current design state | Known evidence and unresolved gate |
 | --- | --- | --- |
-| **KIS** | Candidate JSON token POST and quote request assembly; disabled HTTPS sender only | Official pinned sample confirms `/oauth2/tokenP`, `client_credentials`, `appkey`, `appsecret`, `access_token`, `access_token_token_expired` (KST string). Quote planner's lowercase `fid_*` differs from newer official uppercase `FID_*`; no actual gateway validation. Live/paper source/session still unverified. |
+| **KIS** | Candidate JSON token POST and quote request assembly; disabled HTTPS sender only | Official pinned sample confirms `/oauth2/tokenP`, `client_credentials`, `appkey`, `appsecret`, `access_token`, `access_token_token_expired` (naive string; timezone **not confirmed** by the sample). Quote planner's lowercase `fid_*` differs from newer official uppercase `FID_*`; no actual gateway validation. Live/paper source/session still unverified. |
 | **Kiwoom REST** | Candidate JSON token POST and quote assembly; disabled HTTPS sender only | Official pinned auth source confirms `/oauth2/token`, `grant_type`, `appkey`, `secretkey`, bearer/token and `expires_dt` parsed with KST. Actual `ka10001` status, signed quote prices, KRX/NXT/SOR and continuity remain unverified. |
 | **LS** | Credential identity only; actual WireRequest blocked | Earlier official [guide](https://openapi.ls-sec.co.kr/howto-use) and [samples](https://openapi.ls-sec.co.kr/howto-sample) include an onboarding route, **not** a fully verified native t1102 token/quote contract. Do not inherit their TLS-disabled example. |
 | **DB** | Credential identity only; token/quote WireRequests blocked | Earlier [official sample](https://openapi.dbsec.co.kr/testbed-sample) had URL-query credentials and disabled TLS. These behaviors are **not copied**; publisher-confirmed safe authentication is a gate. |
@@ -31,11 +31,16 @@ publisher deployment and credential requirements can differ from examples.
   [`ka10001 quote example`](https://github.com/Kiwoom-Securities/Kiwoom-REST-API/blob/953e5dbff123f437ab4d11a78a95191a685eb51f/examples/%EA%B5%AD%EB%82%B4%EC%A3%BC%EC%8B%9D/%EC%A2%85%EB%AA%A9%EC%A0%95%EB%B3%B4/get_domestic_stock_info.py),
   Git blob `c39741c73f0f8bdbc47694de24abf3cbaaf1d402`.
 
-These are official examples, **not** authorized response fixtures. Token parser
-KST assumptions follow the publisher example interpretation, but they are not
-asserted as production claims until live/paper contract verification. Every
-KIS/Kiwoom code path is labelled candidate and the HTTPS transport is default
-disabled. The other four do not have a verified executable native token route.
+These are official examples, **not** authorized response fixtures. Rechecking
+KIS `save_token` / `_read_token_file` shows naive `datetime.strptime` and local
+`datetime.today()` comparisons, not a timezone declaration. The parser no
+longer assumes KST for KIS: explicit caller-provided fixed-offset context is
+required, and the true provider time basis remains unverified. Kiwoom's pinned
+auth source explicitly assigns KST when parsing expiry. Neither observation
+proves actual live/paper behavior. Strict token_type and Kiwoom return_code
+requirements are fail-closed library policy; permissive upstream defaults are
+not copied. Every KIS/Kiwoom path remains candidate-only and HTTPS is disabled
+by default. The other four still have no verified executable native token route.
 
 ## Before any public broker support
 

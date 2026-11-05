@@ -24,8 +24,10 @@ the assistant to access accounts, fetch tokens or make any real network request.
   Rotation/revocation invalidate; no automatic token issue, refresh or retry.
 - `_https_transport.HttpsTransport` has `network_enabled=False` by default.
   Only an explicit opt-in instance can connect. It uses `http.client` over
-  verified TLS with `ssl.create_default_context`, hostname verification and
-  system roots; never disables certificate checks. It does not consult proxy
+  verified TLS with `SSLContext(PROTOCOL_TLS_CLIENT)`, hostname verification
+  and system roots; never disables certificate checks. It deliberately avoids
+  `create_default_context()` because that helper can honor `SSLKEYLOGFILE` and
+  enable TLS session-key logging from the ambient environment. It does not consult proxy
   environment variables, follow redirects, reuse cookies, persist secrets or
   auto-retry. System-level proxy interception or hostile monkeypatching is
   not a threat model this component can enforce.
@@ -36,14 +38,27 @@ the assistant to access accounts, fetch tokens or make any real network request.
   to retry**, particularly for future orders. There are no order paths here.
 - HTTP quote and token requests are assembled using canonical fixed-origin
   existing request plans and publisher-example evidence, not arbitrary URLs.
+  The entire body and header tuple must match the builder's canonical shape,
+  including the exact credential snapshot and bearer lease. Host/framing header
+  overrides and altered quote symbols in request bodies are rejected.
+  Credential and token revocation/rotation/expiry are rechecked before connecting
+  and again after TLS, before the HTTP write. This is not atomic coordination
+  with other threads/processes; concurrent use requires a separate design.
   Exact 200 is the only provisional success status; all other status families
   fail with static classification. One network attempt at most; response bodies
   are bounded at 1,048,576 bytes and treated as **untrusted**.
 - Token request construction/response parsing is **candidate-only for KIS and
-  Kiwoom** based on pinned official example source files. KIS token expiry is
-  parsed from `access_token_token_expired` (`%Y-%m-%d %H:%M:%S`, KST); Kiwoom
-  from `expires_dt` (`%Y%m%d%H%M%S`, KST). No guessed TTL or transitive secret
-  fallback. Duplicate JSON keys or non-finite constants are rejected.
+  Kiwoom** based on pinned official example source files. A token response must
+  explicitly declare bearer `token_type`; Kiwoom must also have integer
+  `return_code == 0`. Missing fields are never treated as success, even where
+  upstream example code is permissive. Explicit error envelopes are rejected.
+  KIS `access_token_token_expired` (`%Y-%m-%d %H:%M:%S`) is naive in the pinned
+  sample: the parser requires a caller-supplied `kis_expiry_timezone` (a fixed
+  `datetime.timezone`) and otherwise fails with `EVIDENCE_MISSING`. Tests supply
+  a synthetic offset; that does not confirm the production time basis. Kiwoom
+  `expires_dt` (`%Y%m%d%H%M%S`) uses KST explicitly in the pinned publisher code.
+  No guessed TTL or transitive secret fallback. Duplicate JSON keys, non-finite
+  constants, malformed/deeply nested input and noncanonical date text fail.
 - LS, DB, Toss and Meritz can have distinct in-memory credential identities
   but **cannot** create real token/quote WireRequests until their relevant
   publisher-confirmed contracts are fully verified. DB's unsafe query-secret
@@ -52,6 +67,20 @@ the assistant to access accounts, fetch tokens or make any real network request.
   remain **unchanged / unavailable**. No `WireResponse` is automatically
   promoted to a `Ticker`: provider response status, venue, environment and
   session/source assertions are still not fully evidenced.
+
+## Timeout and TLS implementation limits
+
+`timeout_ms` sets the standard-library socket blocking-operation timeout. It is
+**not** an end-to-end wall-clock deadline, DNS deadline or cancellable operation;
+a peer making incremental progress can keep a request alive beyond that value.
+A response byte cap is not a duration bound. Before production integration,
+choose and independently test an absolute deadline/cancellation strategy.
+No live TLS handshake, DNS query or timeout behavior is validated by mock tests.
+
+Python 3.13 primary references, checked 2026-11-05:
+[HTTPConnection timeout](https://docs.python.org/3.13/library/http.client.html#http.client.HTTPConnection),
+[SSLContext](https://docs.python.org/3.13/library/ssl.html#ssl.SSLContext), and
+[create_default_context / SSLKEYLOGFILE](https://docs.python.org/3.13/library/ssl.html#ssl.create_default_context).
 
 ## Verification and next gates
 
