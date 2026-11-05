@@ -43,10 +43,15 @@ for the token endpoint. The retrieved copies are identified by hash in
      is enforced by `WireRequest`.
    - Response: explicit Bearer `token_type`; `scope == "oob"`; no
      `rsp_cd`/`rsp_msg` envelope.
-   - Lifetime: the guide's field table says `expire_in`, but its example says
-     `expires_in`. Exactly one of the two must be present, as an integer
-     between 1 and a library sanity bound of 7 days. Both or neither fail
-     closed.
+   - Lifetime: the guide documents it in two forms that differ in **name and
+     type**. The field table has `expire_in`, type String, length 10. The
+     response example has `expires_in` as a JSON number. Each form is
+     accepted only as documented: `expires_in` as a JSON integer, or
+     `expire_in` as 1–10 ASCII digits with no sign, space or leading zero.
+     A mixed form (`expire_in` as a number, `expires_in` as a string), both
+     names at once, or neither, fails closed. The value must be between 1 s
+     and a library sanity bound of 7 days. Which form the gateway really sends
+     is unverified.
    - The lease expires that many seconds after the caller's `now_ms`. Callers
      should pass the time before sending, so the round trip is not counted as
      lifetime.
@@ -56,6 +61,10 @@ for the token endpoint. The retrieved copies are identified by hash in
 - These are publisher documentation and samples, not gateway verification.
   Live acceptance, the `rsp_cd` universe, rate limits (the guide lists
   10 TPS for t1102) and the meaning of zero OHLC values remain unverified.
+- Gate before any real token issuance: the relative lifetime is counted from
+  the caller's `now_ms`, not from a send-start time captured by the
+  transport. A trustworthy send-start timestamp must exist first, so the
+  lifetime cannot be extended artificially.
 - No public `fetch_ticker`. Network stays disabled by default. No credential,
   token, quote, account or order request was made to LS.
 - DB, Toss and Meritz remain blocked for real `WireRequest`s. The gates for

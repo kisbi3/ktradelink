@@ -151,10 +151,16 @@ GOOD = {"access_token": "SYNTHETIC_TOKEN", "scope": "oob", "token_type": "Bearer
         "expires_in": 86400}
 
 
-@pytest.mark.parametrize("field", ["expires_in", "expire_in"])
-def test_either_publisher_lifetime_spelling_yields_a_relative_lease(field):
+WITHOUT_LIFETIME = {k: v for k, v in GOOD.items() if k != "expires_in"}
+
+
+# (name, value) pairs exactly as the LS guide documents them: the response
+# example (`expires_in` JSON number) and the field table (`expire_in`, String,
+# length 10).
+@pytest.mark.parametrize("field,value", [("expires_in", 86400), ("expire_in", "86400")])
+def test_either_documented_lifetime_form_yields_a_relative_lease(field, value):
     identity, provider = _setup()
-    payload = {k: v for k, v in GOOD.items() if k != "expires_in"} | {field: 86400}
+    payload = WITHOUT_LIFETIME | {field: value}
     cache = InMemoryTokenCache()
     lease = save_example_token_response(
         _token_response(identity, provider, payload), identity, provider, cache, now_ms=5_000,
@@ -177,6 +183,18 @@ def test_either_publisher_lifetime_spelling_yields_a_relative_lease(field):
     GOOD | {"expires_in": 0},
     GOOD | {"expires_in": -1},
     GOOD | {"expires_in": MAX_RELATIVE_LIFETIME_S + 1},
+    WITHOUT_LIFETIME | {"expire_in": 86400},    # table name with the example's type
+    WITHOUT_LIFETIME | {"expire_in": "086400"},
+    WITHOUT_LIFETIME | {"expire_in": "+86400"},
+    WITHOUT_LIFETIME | {"expire_in": " 86400"},
+    WITHOUT_LIFETIME | {"expire_in": "86400.0"},
+    WITHOUT_LIFETIME | {"expire_in": "\uff18\uff16\uff14\uff10\uff10"},  # full-width digits
+    WITHOUT_LIFETIME | {"expire_in": "12345678901"},                # over the 10-char table length
+    WITHOUT_LIFETIME | {"expire_in": "0"},
+    WITHOUT_LIFETIME | {"expire_in": ""},
+    WITHOUT_LIFETIME | {"expire_in": str(MAX_RELATIVE_LIFETIME_S + 1)},
+    WITHOUT_LIFETIME | {"expire_in": None},
+    GOOD | {"expire_in": "86400"},                                  # both forms at once
     GOOD | {"rsp_cd": "00000"},                                       # gateway envelope
     GOOD | {"error": "invalid_client"},
     GOOD | {"access_token": ""},

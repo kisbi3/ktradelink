@@ -36,8 +36,9 @@ explicit expiry and credentials; it never refreshes automatically. The private
 KIS/Kiwoom/LS token parser can read a synthetic publisher-example response and
 save an explicitly scoped, expiring lease, but it does not contact a broker.
 Token type must be explicit, and Kiwoom's return_code must be integer zero.
-LS returns a relative lifetime: exactly one of the two publisher spellings
-`expires_in` / `expire_in` must be present, `scope` must be `oob`, and the
+LS returns a relative lifetime in one of its two documented forms: the
+example's `expires_in` JSON integer or the field table's `expire_in` decimal
+string (mixed or duplicate forms fail). `scope` must be `oob`, and the
 lease expires that many seconds after the `now_ms` you pass — so pass the time
 *before* sending the token request.
 KIS's sample expiry has no timezone information: `save_example_token_response`

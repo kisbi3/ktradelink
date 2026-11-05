@@ -34,6 +34,21 @@ class TokenFailure(Enum):
     STALE_CREDENTIAL = "credentials_changed_during_token_exchange"
 
 
+def _ls_lifetime_seconds(field: str, value: object) -> int:
+    """Example form: ``expires_in`` JSON int. Table form: ``expire_in`` String
+    of at most 10 ASCII digits without sign, space or leading zero."""
+    if field == "expires_in" and type(value) is int:
+        seconds = value
+    elif (field == "expire_in" and type(value) is str and 1 <= len(value) <= 10
+            and value.isascii() and value.isdigit() and value[0] != "0"):
+        seconds = int(value)
+    else:
+        raise ValueError("undocumented token lifetime representation")
+    if not 1 <= seconds <= MAX_RELATIVE_LIFETIME_S:
+        raise ValueError("invalid token lifetime")
+    return seconds
+
+
 class TokenError(RuntimeError):
     """Static error only, body and exception chain are intentionally discarded."""
 
@@ -112,9 +127,10 @@ def save_example_token_response(
         if type(kind) is not str or kind.lower() != "bearer":
             raise ValueError("unexpected token type")
         if identity.broker == "ls":
-            # LS API guide token detail: the field table says `expire_in` but
-            # the response example says `expires_in`. Accept exactly one of the
-            # two publisher spellings; never guess when both or neither appear.
+            # LS API guide token detail documents the lifetime two ways: the
+            # field table says `expire_in`, type String, length 10; the response
+            # example says `expires_in` as a JSON number. Each (name, type) pair
+            # is accepted only as documented; mixed or both/neither fail closed.
             if any(key in payload for key in ("rsp_cd", "rsp_msg")):
                 raise ValueError("gateway status envelope on token response")
             if payload["scope"] != "oob":
@@ -123,9 +139,7 @@ def save_example_token_response(
             present = [key for key in ("expires_in", "expire_in") if key in payload]
             if len(present) != 1:
                 raise ValueError("ambiguous token lifetime field")
-            lifetime_s = payload[present[0]]
-            if type(lifetime_s) is not int or not 1 <= lifetime_s <= MAX_RELATIVE_LIFETIME_S:
-                raise ValueError("invalid token lifetime")
+            lifetime_s = _ls_lifetime_seconds(present[0], payload[present[0]])
         elif identity.broker == "kis":
             access = payload["access_token"]
             expiry_text = payload["access_token_token_expired"]
