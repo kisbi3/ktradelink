@@ -52,12 +52,28 @@ with mocked HTTPS only:
    unbound never takes the slot. Other identities and other providers are
    not blocked.
 4. **Send ordering.** `BearerLease.issue_sequence` carries the attested
-   sequence number. `InMemoryTokenCache.put` refuses, with
-   `CredentialFailure.SUPERSEDED`, to replace a lease for the same credential
-   snapshot that came from a later send. The token codec maps this to
-   `TokenFailure.SUPERSEDED`. Saving the same response twice is allowed.
-   Because sends for one identity never overlap (item 3), send-start order is
-   the order in which the broker received them.
+   sequence number. The cache also keeps, per (provider, identity), the
+   highest sequence it has ever saved (a high-watermark):
+   - The watermark **outlives the lease**: expiry eviction and `revoke` leave
+     it in place.
+   - `InMemoryTokenCache.put` refuses an attested save with
+     `CredentialFailure.SUPERSEDED` (`TokenFailure.SUPERSEDED` in the codec)
+     when its sequence is lower than the watermark.
+   - It also refuses one that is equal to the watermark, unless that exact
+     lease is still cached. Re-saving the live lease is the only allowed
+     repeat.
+   - So a response from an earlier send cannot be reinstated, even after the
+     newer token expired or was revoked. After `revoke`, only a new send
+     can repopulate the cache.
+   - The watermark spans credential revisions. Sequences are process-wide
+     and taken when a send starts, and a request for a newer revision can
+     only be built after the rotation, so it always carries a higher
+     sequence. Responses for an older revision fail `STALE_CREDENTIAL`.
+   - Because sends for one identity never overlap (item 3), send-start order
+     is the order in which the broker received them.
+   - The watermark was added after the ChatGPT review of PR #26 (M1): the
+     first version kept the order only in the cached lease, so expiry or
+     revocation erased it.
 5. **In-process locking.**
    - `InMemoryCredentialProvider` serialises its operations with an `RLock`.
    - `InMemoryTokenCache` serialises its operations with a `Lock`.
@@ -75,8 +91,11 @@ with mocked HTTPS only:
   that writes the private map or patches the module is outside the threat
   model, as before (ADR 0009).
 - **Manual leases:** a lease put into the cache without `issue_sequence`
-  (direct `cache.put`) is an explicit caller injection. It is not ordered
-  against attested leases.
+  (direct `cache.put`) is an explicit caller injection. It neither moves nor
+  resets the watermark, so it cannot reopen the cache to an older attested
+  response.
+- **Memory:** the watermark is one integer per (provider, identity) for the
+  cache's lifetime.
 - **Processes:** nothing coordinates between processes or machines. Two
   processes sharing one app key can still invalidate each other's tokens.
 - **Gateways:** none of this verifies any broker gateway. There is no
