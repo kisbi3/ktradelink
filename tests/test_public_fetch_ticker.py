@@ -784,3 +784,87 @@ def test_error_constructor_refuses_non_static_shapes():
         ktradelink.TransportError("x", delivery="not_sent")
     with pytest.raises(TypeError):
         ktradelink.TransportError("")
+
+
+# --- ChatGPT review of PR #28 (M1, M2, L1) ----------------------------------
+
+def test_clock_failure_after_the_token_response_is_not_reported_as_not_sent(
+        clock, monkeypatch, decoder_ready):
+    """M1: once the token response has arrived, a token may already exist at
+    the broker. A later local clock failure must say so, never NOT_SENT."""
+    token_conn = connection(data=token_body("ls"))
+    quote_conn = connection(data=quote_body("ls"))
+    serve(monkeypatch, token_conn, quote_conn)
+
+    def failing_after_response():
+        if token_conn.getresponse.called:
+            raise OSError("synthetic clock failure")
+        return NOW_MS
+
+    monkeypatch.setattr("ktradelink._https_transport._wall_clock_ms", failing_after_response)
+    with pytest.raises(ktradelink.KTradeLinkError) as caught:
+        client("ls").fetch_ticker("005930")
+    assert caught.value.stage == "token"
+    assert caught.value.delivery is DeliveryState.RESPONSE_RECEIVED
+    assert caught.value.delivery is not DeliveryState.NOT_SENT
+    assert token_conn.request.call_count == 1
+    quote_conn.request.assert_not_called()
+    assert_clean(caught.value)
+
+
+def test_clock_failure_before_any_write_is_not_sent_with_its_stage(monkeypatch, no_network,
+                                                                   decoder_ready):
+    def broken():
+        raise OSError("synthetic clock failure")
+
+    monkeypatch.setattr("ktradelink._https_transport._wall_clock_ms", broken)
+    with pytest.raises(ktradelink.TransportError) as caught:
+        client("ls").fetch_ticker("005930")
+    assert (caught.value.reason, caught.value.stage) == ("clock_unavailable", "token")
+    assert caught.value.delivery is DeliveryState.NOT_SENT
+    no_network.assert_not_called()
+    assert_clean(caught.value)
+
+
+@pytest.mark.parametrize("symbol,venue", [("000660", "KRX"), ("005930", "NXT")])
+def test_preflight_rejects_a_decoder_that_mislabels_provenance(symbol, venue, monkeypatch,
+                                                               no_network):
+    """M2: a build returning the right price but the wrong symbol or venue
+    must be refused before any connection or token request."""
+    from ktradelink import _native
+
+    def mislabelled(broker, _symbol, _venue, _payload):
+        return ktradelink.models.Ticker(symbol=symbol, venue=venue, broker=broker,
+                                        last=Decimal("72000"), volume=0)
+
+    monkeypatch.setattr(_native, "decode_ticker_candidate", mislabelled)
+    assert _public_client._decoder_preflight("ls") is False
+    with pytest.raises(ktradelink.UnsupportedCapability) as caught:
+        client("ls").fetch_ticker("005930")
+    assert caught.value.reason == "native_decoder_unavailable"
+    assert caught.value.delivery is DeliveryState.NOT_SENT
+    no_network.assert_not_called()
+
+
+def test_preflight_accepts_a_correctly_labelled_decoder(monkeypatch):
+    from ktradelink import _native
+
+    def correct(broker, symbol, venue, _payload):
+        return ktradelink.models.Ticker(symbol=symbol, venue=venue, broker=broker,
+                                        last=Decimal("72000"), volume=0)
+
+    monkeypatch.setattr(_native, "decode_ticker_candidate", correct)
+    assert _public_client._decoder_preflight("ls") is True
+
+
+@pytest.mark.parametrize("broker,field", [("kis", "rt_cd"), ("kiwoom", "return_code"),
+                                          ("ls", "rsp_cd")])
+def test_explicit_null_status_is_malformed_not_missing(broker, field, clock, monkeypatch,
+                                                       decoder_ready):
+    """L1: an explicit JSON null is present but malformed."""
+    data = {**QUOTE_BODIES[broker], field: None}
+    serve(monkeypatch, connection(data=token_body(broker)), connection(data=body(data)))
+    with pytest.raises(ktradelink.ResponseSchemaError) as caught:
+        client(broker).fetch_ticker("005930")
+    assert (caught.value.reason, caught.value.stage) == ("quote_status_invalid", "quote")
+    assert caught.value.delivery is DeliveryState.RESPONSE_RECEIVED

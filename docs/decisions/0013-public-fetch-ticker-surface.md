@@ -152,9 +152,15 @@ wiring is where a token gets printed or a retry gets added. The spec
    LS paper is refused; there is no fallback between live and paper.
 10. **Native decoder preflight.** Before the first request, each client
     decodes a synthetic payload for its broker with the installed native
-    module and checks the result (as in ADR 0012). If that fails, the call
+    module and checks the result (as in ADR 0012): broker, symbol, venue,
+    last price and volume must all match, so a build that mislabels
+    provenance is refused before any token request. If that fails, the call
     raises `UnsupportedCapability("native_decoder_unavailable")` and nothing
     is sent. Importing `ktradelink` still does not load the native module.
+11. **Local clock failures** (`clock_unavailable`) name their stage and are
+    `NOT_SENT` only before that stage's request is written. After a token
+    response has arrived they are `RESPONSE_RECEIVED`, because the broker may
+    already have issued a token.
 
 ## Consequences and limits
 

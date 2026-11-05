@@ -183,14 +183,19 @@ class Credentials:
         raise TypeError("Credentials cannot be pickled or copied")
 
 
-def _now_ms() -> int:
-    """The transport's real UTC clock, so tests patch a single function."""
+def _now_ms(stage: str, delivery: DeliveryState = DeliveryState.NOT_SENT) -> int:
+    """The transport's real UTC clock, so tests patch a single function.
+
+    A failure is reported for the request named by ``stage``: ``NOT_SENT``
+    only before that request is written, ``RESPONSE_RECEIVED`` after its
+    response arrived (a token may already have been issued).
+    """
     try:
         value = _transport._wall_clock_ms()
     except Exception:
         value = None
     if type(value) is not int or value < 0:
-        raise TransportError("clock_unavailable")
+        raise TransportError("clock_unavailable", delivery=delivery, stage=stage)
     return value
 
 
@@ -263,10 +268,10 @@ def _status_failure(profile: _FetchTickerProfile, text: str) -> KTradeLinkError 
     if malformed or type(root) is not dict:
         return ResponseSchemaError("quote_response_not_a_json_object",
                                    delivery=received, stage="quote")
-    value = root.get(profile.status_field)
-    if value is None:
+    if profile.status_field not in root:
         return ResponseSchemaError("quote_status_missing", delivery=received, stage="quote")
-    if type(value) is not type(profile.status_ok):
+    value = root[profile.status_field]
+    if type(value) is not type(profile.status_ok):  # includes an explicit null
         return ResponseSchemaError("quote_status_invalid", delivery=received, stage="quote")
     if value != profile.status_ok:
         return BrokerRejected("quote_status_not_success", delivery=received, stage="quote")
@@ -282,7 +287,10 @@ def _decoder_preflight(broker: str) -> bool:
         from ktradelink._native import decode_ticker_candidate
 
         ticker = decode_ticker_candidate(broker, "005930", "KRX", _FETCH_TICKER[broker].preflight)
+        # Provenance too: a build that mislabels symbol or venue must fail
+        # here, before any token is requested (ChatGPT review of PR #28, M2).
         return (type(ticker) is Ticker and ticker.broker == broker
+                and ticker.symbol == "005930" and ticker.venue == "KRX"
                 and ticker.last == Decimal("72000") and ticker.volume == 0)
     except Exception:
         return False
@@ -397,7 +405,7 @@ class BrokerClient:
         return self._fetch_quote(plan)
 
     def _reusable_token(self) -> bool:
-        now = _now_ms()
+        now = _now_ms("token")
         try:
             lease = self._cache.get(self._provider, self._identity, now_ms=now)
         except CredentialError:
@@ -433,7 +441,9 @@ class BrokerClient:
             failure = _from_transport(error, "token")
         if failure is not None:
             raise failure
-        now = _now_ms()
+        # The token response has arrived: a clock failure here must not claim
+        # the token request was never sent (ChatGPT review of PR #28, M1).
+        now = _now_ms("token", DeliveryState.RESPONSE_RECEIVED)
         try:
             save_example_token_response(
                 response, self._identity, self._provider, self._cache, now_ms=now,
@@ -446,7 +456,8 @@ class BrokerClient:
     def _drop_token(self, rejected: object) -> None:
         """After a quote 401, stop reusing exactly that token (no re-send)."""
         try:
-            current = self._cache.get(self._provider, self._identity, now_ms=_now_ms())
+            current = self._cache.get(self._provider, self._identity,
+                                      now_ms=_now_ms("quote", DeliveryState.RESPONSE_RECEIVED))
         except (CredentialError, KTradeLinkError):
             return
         if current is rejected:
@@ -454,7 +465,7 @@ class BrokerClient:
 
     def _fetch_quote(self, plan) -> Ticker:
         failure: KTradeLinkError | None = None
-        now = _now_ms()
+        now = _now_ms("quote")
         try:
             request = build_quote_request(plan, self._identity, self._provider, self._cache,
                                           now_ms=now)
