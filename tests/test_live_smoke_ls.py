@@ -17,7 +17,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-TOOL = Path(__file__).resolve().parents[1] / "tools" / "live_smoke_ls.py"
+from ktradelink import _native
+
+TOOL =Path(__file__).resolve().parents[1] / "tools" / "live_smoke_ls.py"
 KEY, SECRET, TOKEN = "SYNTHETIC_APP_KEY", "SYNTHETIC_APP_SECRET", "SYNTHETIC_BEARER"
 ENV = {"KTRADELINK_LS_APP_KEY": KEY, "KTRADELINK_LS_APP_SECRET": SECRET}
 TOKEN_BODY = json.dumps({"access_token": TOKEN, "scope": "oob", "token_type": "Bearer",
@@ -251,7 +253,7 @@ def test_credentials_too_short_to_redact_are_refused_before_sending(tool, key, s
 
 def _fake_native(**attributes):
     module = types.ModuleType("_ktradelink_native")
-    module.CONTRACT_VERSION = 1
+    module.CONTRACT_VERSION = _native._CONTRACT_VERSION  # current, so the decoder path is exercised
     module.CORE_VERSION = "synthetic-old-build"
     for name, value in attributes.items():
         setattr(module, name, value)

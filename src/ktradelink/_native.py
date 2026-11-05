@@ -3,10 +3,10 @@
 from importlib import import_module
 from types import ModuleType
 
-from ktradelink.models import Ticker
+from ktradelink.models import OrderBook, Ticker
 
 _MODULE = "_ktradelink_native"
-_CONTRACT_VERSION = 1
+_CONTRACT_VERSION = 2  # 2: adds the offline order-book decoder seam.
 
 
 class NativeCoreUnavailable(ImportError):
@@ -67,5 +67,23 @@ def decode_ticker_candidate(broker: str, symbol: str, venue: str, payload: str) 
     """
     result = _load_native()._decode_ticker_candidate(broker, symbol, venue, payload)
     if not isinstance(result, Ticker):
+        raise RuntimeError("Native decoder returned an incompatible model type.")
+    return result
+
+
+def decode_order_book_candidate(
+    broker: str, symbol: str, venue: str, payload: str, *, limit: int | None = None
+) -> OrderBook:
+    """PRIVATE offline order-book (호가) decoder; NO broker/network request.
+
+    Accepts caller-supplied JSON shaped like the pinned KIS FHKST01010200,
+    Kiwoom ka10004 or LS t1101 publisher examples, KRX caller context only.
+    ``limit`` caps levels per side (1..10); beyond the documented depth it
+    raises instead of clamping. Never expose this as fetch_order_book.
+    """
+    result = _load_native()._decode_order_book_candidate(
+        broker, symbol, venue, payload, limit=limit
+    )
+    if not isinstance(result, OrderBook):
         raise RuntimeError("Native decoder returned an incompatible model type.")
     return result

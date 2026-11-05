@@ -8,7 +8,8 @@ mod order_book;
 pub use order_book::{BookLevel, CoreOrderBook, OrderBookInput};
 
 pub const CORE_VERSION: &str = env!("CARGO_PKG_VERSION");
-pub const CONTRACT_VERSION: u32 = 1;
+/// Native Python-extension contract; 2 added `_decode_order_book_candidate`.
+pub const CONTRACT_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorKind {
