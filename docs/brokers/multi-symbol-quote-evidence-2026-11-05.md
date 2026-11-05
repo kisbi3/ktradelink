@@ -22,8 +22,9 @@
 - **Unchanged since the earlier 2026-11-05 audits:** the LS `tr-guides.json`,
   the DB group list, the three Toss documents and the normalised Meritz
   specification are byte-identical (Meritz: identical after removing
-  `generatedAt`) to the copies pinned by the trade-tick audit on branch
-  `claude/issue-17-trade-evidence`, retrieved about 50 minutes earlier.
+  `generatedAt`) to the copies pinned by the trade-tick audit
+  ([trade-evidence-2026-11-05.md](trade-evidence-2026-11-05.md) §4.1–§7.1),
+  retrieved about 50 minutes earlier.
 - **Pin formats:**
   - Git blob SHAs are `sha1("blob <len>\0" + bytes)`, i.e. what
     `git ls-tree` prints. Lines are written "(K1 L91)": source K1, line 91.
