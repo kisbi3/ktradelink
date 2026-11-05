@@ -1,4 +1,4 @@
-"""Private KIS/Kiwoom/LS/DB publisher-evidence token parsing, without network I/O.
+"""Private KIS/Kiwoom/LS/DB/Toss publisher-evidence token parsing, no network I/O.
 
 No automatic token issuance or refresh, and no unsupported broker extrapolation.
 Errors never reflect the upstream body. Parser success is NOT live validation.
@@ -24,6 +24,7 @@ from ktradelink._https_transport import (
     WireRequest,
     WireResponse,
     _token_send_attestation,
+    _toss_token_write_is_latest,
 )
 from ktradelink._request_plan import AuthRequirements
 
@@ -39,6 +40,10 @@ _DB_TOKEN_KEYS = frozenset(("access_token", "scope", "token_type", "expires_in")
 # The API guide example returns "oob" (the requested scope); the testbed
 # example returns "login". Both are publisher-shown; no other value is.
 _DB_TOKEN_SCOPES = ("oob", "login")
+# Toss OpenAPI 1.2.28 OAuth2TokenResponse: required `access_token`,
+# `token_type` (enum "Bearer") and `expires_in` (integer, seconds left). The
+# schema does not forbid other keys; rejecting them is library policy.
+_TOSS_TOKEN_KEYS = frozenset(("access_token", "token_type", "expires_in"))
 
 
 class TokenFailure(Enum):
@@ -134,6 +139,11 @@ def save_example_token_response(
     token this process already received from an earlier send is refused as
     ``REISSUED`` whatever the caller acknowledges. Other processes are not
     visible. Passing either acknowledgement for another broker is refused.
+
+    Toss (ADR 0015) keeps one valid token per client and invalidates the
+    previous one on every issue. A Toss response is cached only if no later
+    Toss token send to the same client id has started writing in this
+    process, from any provider or profile (``SUPERSEDED`` otherwise).
     A failed parse does not mutate the cache. Exchange-time credential rotation
     is rejected before writing the token. Future production support needs
     separately verified quote/source/status/expiry semantics.
@@ -214,6 +224,11 @@ def save_example_token_response(
                 raise ValueError("unexpected token scope")
             access = payload["access_token"]
             lifetime_s = _json_int_seconds(payload["expires_in"], DB_MAX_LIFETIME_S)
+        elif identity.broker == "toss":
+            if set(payload) != _TOSS_TOKEN_KEYS or kind != "Bearer":
+                raise ValueError("undocumented Toss token response shape")
+            access = payload["access_token"]
+            lifetime_s = _json_int_seconds(payload["expires_in"], MAX_RELATIVE_LIFETIME_S)
         elif identity.broker == "kis":
             access = payload["access_token"]
             expiry_text = payload["access_token_token_expired"]
@@ -280,6 +295,11 @@ def save_example_token_response(
             raise TokenError(TokenFailure.UNACKNOWLEDGED)
     if expires_at_ms <= now_ms:
         raise TokenError(TokenFailure.INVALID_RESPONSE)
+    if identity.broker == "toss" and not _toss_token_write_is_latest(
+            snap.pair, attestation.sequence):
+        # A later Toss token send to the same client, from any provider or
+        # profile in this process, has already invalidated this token.
+        raise TokenError(TokenFailure.SUPERSEDED)
     # Check again for rotated credentials before mutation; no automatic refresh.
     try:
         provider.require_current(snap)

@@ -16,6 +16,7 @@ def _fresh_process_token_registries(monkeypatch):
     entry from one test must not leak into another.
     """
     monkeypatch.setattr("ktradelink._token_codec._DB_ISSUED", {})
+    monkeypatch.setattr("ktradelink._https_transport._TOSS_TOKEN_WRITES", {})
 
 
 @pytest.fixture
