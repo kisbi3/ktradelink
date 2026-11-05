@@ -1,6 +1,10 @@
-//! Accountless, evidence-limited, SIX-broker offline ticker decoder candidates.
+//! Accountless, evidence-limited, SIX-broker offline ticker decoder candidates
+//! and KIS/Kiwoom/LS offline order-book candidates (see `order_book`).
 //! No HTTP, auth, orders, venue inference, timestamps or raw info forwarding.
 #![forbid(unsafe_code)]
+
+mod order_book;
+pub use order_book::{decode_order_book_candidate, ORDER_BOOK_DEPTH};
 
 use ktradelink_core::{CoreError, CoreTicker, Price, Prices, TickerInput, Venue};
 use serde::de::{self, MapAccess, SeqAccess, Visitor};
@@ -23,6 +27,14 @@ pub enum DecodeKind {
     AmbiguousSymbol,
     OversizedInput,
     CoreValidation,
+    /// A known broker without an evidenced decoder for this data kind.
+    UnsupportedBroker,
+    /// A nonpositive order-book level cap.
+    InvalidLimit,
+    /// A requested per-side depth beyond the publisher-documented depth.
+    DepthExceeded,
+    /// A quoted book level after an empty ("no quote") rank on the same side.
+    LevelGap,
 }
 
 /// Errors never include raw input, token fields, account numbers or JSON excerpts.
