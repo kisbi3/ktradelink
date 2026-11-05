@@ -1,9 +1,13 @@
 //! Thin Python boundary. Existing Python Ticker remains the final public model.
-use ktradelink_core::{CoreError, CoreTicker, Price, Prices, TickerInput, Venue};
-use ktradelink_decoders::{decode_ticker_candidate, Broker, DecodeError};
+use ktradelink_core::{
+    BookLevel, CoreError, CoreOrderBook, CoreTicker, Price, Prices, TickerInput, Venue,
+};
+use ktradelink_decoders::{
+    decode_order_book_candidate, decode_ticker_candidate, Broker, DecodeError,
+};
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyBool, PyDict, PyInt};
+use pyo3::types::{PyBool, PyDict, PyInt, PyTuple};
 
 fn core_error(error: CoreError) -> PyErr {
     PyValueError::new_err(error.to_string())
@@ -89,6 +93,34 @@ fn _build_ticker(
     into_python_ticker(py, &quote)
 }
 
+/// The existing Python OrderBook/OrderBookLevel are the sole public value
+/// contract; Rust only hands over already-validated text prices and ints.
+fn into_python_order_book(py: Python<'_>, book: &CoreOrderBook) -> PyResult<Py<PyAny>> {
+    let b = book.input();
+    let models = py.import("ktradelink.models")?;
+    let level_type = models.getattr("OrderBookLevel")?;
+    let decimal = py.import("decimal")?.getattr("Decimal")?;
+    let side = |levels: &[BookLevel]| -> PyResult<Bound<'_, PyTuple>> {
+        let mut items = Vec::with_capacity(levels.len());
+        for level in levels {
+            let price = decimal.call1((level.price().as_str(),))?;
+            items.push(level_type.call1((price, level.quantity()))?);
+        }
+        PyTuple::new(py, items)
+    };
+    let kwargs = PyDict::new(py);
+    kwargs.set_item("symbol", &b.symbol)?;
+    kwargs.set_item("venue", b.venue.as_str())?;
+    kwargs.set_item("broker", &b.broker)?;
+    kwargs.set_item("bids", side(&b.bids)?)?;
+    kwargs.set_item("asks", side(&b.asks)?)?;
+    kwargs.set_item("info", PyDict::new(py))?; // No upstream JSON metadata.
+    kwargs.set_item("timestamp", b.timestamp)?;
+    kwargs.set_item("retrieved_at", b.retrieved_at)?;
+    kwargs.set_item("scope_description", b.scope_description.as_deref())?;
+    Ok(models.getattr("OrderBook")?.call((), Some(&kwargs))?.unbind())
+}
+
 /// PRIVATE research tool: parse a source-shaped JSON document supplied by a
 /// caller, with no evidence that the caller actually queried that broker.
 /// It is NOT a published fetch_ticker adapter.
@@ -103,11 +135,30 @@ fn _decode_ticker_candidate(
     into_python_ticker(py, &quote)
 }
 
+/// PRIVATE offline order-book (호가) candidate for KIS/Kiwoom/LS publisher
+/// shapes. Caller-supplied JSON only; NOT a published fetch_order_book.
+/// `limit` must be an int (not bool) in 1..=10 or None.
+#[pyfunction]
+#[pyo3(signature = (broker, symbol, venue, payload, *, limit=None))]
+fn _decode_order_book_candidate(
+    py: Python<'_>, broker: &str, symbol: &str, venue: &str, payload: &str,
+    limit: Option<&Bound<'_, PyAny>>,
+) -> PyResult<Py<PyAny>> {
+    let selected = Broker::parse(broker).map_err(decoder_error)?;
+    let venue = Venue::parse(venue).map_err(core_error)?;
+    // A value beyond usize still exceeds the documented depth (DepthExceeded).
+    let limit = integer(limit, "limit")?.map(|n| usize::try_from(n).unwrap_or(usize::MAX));
+    let book = decode_order_book_candidate(selected, symbol, venue, payload, limit)
+        .map_err(decoder_error)?;
+    into_python_order_book(py, &book)
+}
+
 #[pymodule]
 fn _ktradelink_native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add("CORE_VERSION", ktradelink_core::CORE_VERSION)?;
     module.add("CONTRACT_VERSION", ktradelink_core::CONTRACT_VERSION)?;
     module.add_function(wrap_pyfunction!(_build_ticker, module)?)?;
     module.add_function(wrap_pyfunction!(_decode_ticker_candidate, module)?)?;
+    module.add_function(wrap_pyfunction!(_decode_order_book_candidate, module)?)?;
     Ok(())
 }

@@ -18,7 +18,7 @@ def test_offline_candidate_missing_extension_fails_explicitly(monkeypatch) -> No
 
 def test_offline_candidate_malformed_native_return_is_rejected(monkeypatch) -> None:
     module = ModuleType("fake_native")
-    module.CONTRACT_VERSION = 1
+    module.CONTRACT_VERSION = _native._CONTRACT_VERSION
     module._decode_ticker_candidate = lambda *args, **kwargs: {"last": "1"}
     monkeypatch.setattr(_native, "import_module", lambda name: module)
     with pytest.raises(RuntimeError, match="model type"):

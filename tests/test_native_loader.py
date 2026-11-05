@@ -27,7 +27,7 @@ def test_broken_transitive_import_is_not_hidden(monkeypatch) -> None:
     assert caught.value.name == "another_dependency"
 
 
-@pytest.mark.parametrize("contract", [None, True, 0, 2, "1"])
+@pytest.mark.parametrize("contract", [None, True, 0, 1, 3, "2", 2.0])
 def test_contract_mismatch_rejected(monkeypatch, contract: object) -> None:
     module = ModuleType("fake_native")
     module.CONTRACT_VERSION = contract
@@ -38,7 +38,7 @@ def test_contract_mismatch_rejected(monkeypatch, contract: object) -> None:
 
 def test_wrong_return_type_is_not_a_dictionary_api(monkeypatch) -> None:
     module = ModuleType("fake_native")
-    module.CONTRACT_VERSION = 1
+    module.CONTRACT_VERSION = _native._CONTRACT_VERSION
     module._build_ticker = lambda *args, **kwargs: {"last": "1"}
     monkeypatch.setattr(_native, "import_module", lambda name: module)
     with pytest.raises(RuntimeError, match="model type"):

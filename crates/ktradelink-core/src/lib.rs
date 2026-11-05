@@ -1,10 +1,15 @@
 //! Python-independent foundation. No broker decoder, networking or price arithmetic.
 #![forbid(unsafe_code)]
 
+use std::cmp::Ordering;
 use std::fmt;
 
+mod order_book;
+pub use order_book::{BookLevel, CoreOrderBook, OrderBookInput};
+
 pub const CORE_VERSION: &str = env!("CARGO_PKG_VERSION");
-pub const CONTRACT_VERSION: u32 = 1;
+/// Native Python-extension contract; 2 added `_decode_order_book_candidate`.
+pub const CONTRACT_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorKind {
@@ -12,6 +17,10 @@ pub enum ErrorKind {
     InvalidVenue,
     InvalidPrice,
     InvalidScope,
+    /// A book level whose price is zero; a placeholder is never a level.
+    InvalidLevel,
+    /// Same-side book levels not strictly ordered best-to-worst.
+    UnorderedLevels,
 }
 
 /// Contains field names and error kinds only, never input values or secrets.
@@ -48,6 +57,28 @@ impl Price {
 
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    /// True when every digit is zero (e.g. `0`, `000`, `0.00`).
+    pub fn is_zero(&self) -> bool {
+        self.0.bytes().all(|b| b == b'0' || b == b'.')
+    }
+
+    /// Exact numeric ordering of two validated decimal texts, without any
+    /// float conversion. Leading/trailing zeroes do not affect the result,
+    /// so `70500` and `070500.00` compare Equal while their text differs.
+    pub fn numeric_cmp(&self, other: &Self) -> Ordering {
+        fn split(text: &str) -> (&str, &str) {
+            let (whole, fraction) = text.split_once('.').unwrap_or((text, ""));
+            (whole.trim_start_matches('0'), fraction.trim_end_matches('0'))
+        }
+        let (left_whole, left_fraction) = split(&self.0);
+        let (right_whole, right_fraction) = split(&other.0);
+        left_whole
+            .len()
+            .cmp(&right_whole.len())
+            .then_with(|| left_whole.cmp(right_whole))
+            .then_with(|| left_fraction.cmp(right_fraction))
     }
 }
 
@@ -105,21 +136,37 @@ pub struct TickerInput {
 #[derive(Debug, Clone)]
 pub struct CoreTicker(TickerInput);
 
-impl CoreTicker {
-    pub fn new(input: TickerInput) -> Result<Self, CoreError> {
-        for (field, value) in [("symbol", &input.symbol), ("broker", &input.broker)] {
-            if value.is_empty() || !value.bytes().all(|b| b.is_ascii_graphic()) {
-                return Err(CoreError { field, kind: ErrorKind::InvalidIdentifier });
-            }
+/// Shared symbol/broker/venue/scope rules for every normalized value.
+fn validate_provenance(
+    symbol: &str,
+    broker: &str,
+    venue: Venue,
+    scope_description: Option<&str>,
+) -> Result<(), CoreError> {
+    for (field, value) in [("symbol", symbol), ("broker", broker)] {
+        if value.is_empty() || !value.bytes().all(|b| b.is_ascii_graphic()) {
+            return Err(CoreError { field, kind: ErrorKind::InvalidIdentifier });
         }
-        if input.venue == Venue::BrokerComposite && input.scope_description.is_none() {
+    }
+    if venue == Venue::BrokerComposite && scope_description.is_none() {
+        return Err(CoreError { field: "scope_description", kind: ErrorKind::InvalidScope });
+    }
+    if let Some(scope) = scope_description {
+        if scope.is_empty() || scope.trim() != scope || scope.chars().any(char::is_control) {
             return Err(CoreError { field: "scope_description", kind: ErrorKind::InvalidScope });
         }
-        if let Some(scope) = &input.scope_description {
-            if scope.is_empty() || scope.trim() != scope || scope.chars().any(char::is_control) {
-                return Err(CoreError { field: "scope_description", kind: ErrorKind::InvalidScope });
-            }
-        }
+    }
+    Ok(())
+}
+
+impl CoreTicker {
+    pub fn new(input: TickerInput) -> Result<Self, CoreError> {
+        validate_provenance(
+            &input.symbol,
+            &input.broker,
+            input.venue,
+            input.scope_description.as_deref(),
+        )?;
         Ok(Self(input))
     }
 

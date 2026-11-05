@@ -17,7 +17,7 @@ def quote(**kwargs) -> Ticker:
 
 
 def test_versions_and_exact_return_type() -> None:
-    assert native.CONTRACT_VERSION == 1
+    assert native.CONTRACT_VERSION == 2
     assert core_version() == "0.1.0"
     assert type(quote()) is Ticker
     assert not hasattr(quote(), "to_dict")

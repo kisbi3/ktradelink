@@ -17,6 +17,10 @@ on:
       - "docs/brokers/six-broker-common-surface.md"
       - "docs/brokers/README.md"
       - ".github/workflows/six-broker-decoders.yml"
+      - "tests/fixtures/order_book/**"
+      - "docs/decisions/0014*"
+      - "docs/usage/offline-order-book-decoders.md"
+      - "docs/brokers/order-book-evidence-2026-11-05.md"
   pull_request:
     paths:
       - "crates/ktradelink-core/**"
@@ -33,6 +37,10 @@ on:
       - "docs/brokers/six-broker-common-surface.md"
       - "docs/brokers/README.md"
       - ".github/workflows/six-broker-decoders.yml"
+      - "tests/fixtures/order_book/**"
+      - "docs/decisions/0014*"
+      - "docs/usage/offline-order-book-decoders.md"
+      - "docs/brokers/order-book-evidence-2026-11-05.md"
   workflow_dispatch:
 
 permissions:
