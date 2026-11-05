@@ -123,7 +123,7 @@ examples = {
     "kis": '{"output":{"stck_prpr":"72000","acml_vol":"0"}}',
     "kiwoom": '{"cur_prc":"72000","trde_qty":"0"}',
     "ls": '{"rsp_cd":"00000","t1102OutBlock":{"shcode":"005930","price":72000,"volume":0}}',
-    "db": '{"Out":{"Prpr":"72000"}}',
+    "db": '{"rsp_cd":"00000","Out":{"Prpr":"72000"}}',
     "toss": '{"result":[{"symbol":"005930","currency":"KRW","lastPrice":"72000"}]}',
     "meritz": '{"data":{"stck_prpr":"72000","acml_vol":"0"}}',
 }

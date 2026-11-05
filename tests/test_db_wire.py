@@ -543,3 +543,33 @@ def test_token_then_quote_end_to_end_through_the_existing_decoder(
     assert (ticker.symbol, ticker.venue, ticker.broker) == ("005930", "KRX", "db")
     assert str(ticker.last) == "55550"
     assert (str(ticker.open), str(ticker.high), str(ticker.low)) == ("54300", "55900", "54200")
+
+
+@pytest.mark.parametrize("change", [
+    {"drop": "rsp_cd"}, {"rsp_cd": None}, {"rsp_cd": "0"}, {"rsp_cd": "00001"},
+    {"rsp_cd": "M100"}, {"rsp_cd": 0},
+])
+def test_http_200_quote_without_exact_root_status_never_decodes(
+        monkeypatch, receive_token_response, change):
+    # The SDK checks business success as rsp_cd == "00000" even on HTTP 200
+    # (dbsec_sdk/response.py L78-85); a missing status is never success.
+    pytest.importorskip("_ktradelink_native")
+    identity, provider = _setup()
+    cache = InMemoryTokenCache()
+    token = receive_token_response(build_token_request(identity, provider), _body(GOOD),
+                                   clock=(1_000, 1_000))
+    save_example_token_response(token, identity, provider, cache, now_ms=1_000, **ACKS)
+    plan = plan_ticker_request("db", "005930", venue="KRX", environment="live")
+    req = build_quote_request(plan, identity, provider, cache, now_ms=2_000)
+    body = dict(PRICE_EXAMPLE)
+    if "drop" in change:
+        del body[change["drop"]]
+    else:
+        body.update(change)
+    monkeypatch.setattr("ktradelink._https_transport._wall_clock_ms", lambda: 2_000)
+    _serve(monkeypatch, (200, _body(body)))
+    response = HttpsTransport(network_enabled=True).send(req)
+    assert response.status == 200
+    with pytest.raises(ValueError, match="^rsp_cd: (MissingRequired|SourceStatus)$"):
+        decode_offline_quote_response(plan, http_status=response.status,
+                                      json_text=response.json_text)
