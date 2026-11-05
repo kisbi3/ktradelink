@@ -57,7 +57,11 @@ two conflicting representations now.
 
 ## 3. Symbol, venue and quote-source semantics
 
-- **First-version stock symbol:** exactly six ASCII digits, e.g. `"005930"`.
+- **First-version stock symbol:** exactly six ASCII characters in `[0-9A-Z]`,
+  e.g. `"005930"` or `"0101N0"` ([ADR 0016](../decisions/0016-krx-symbol-grammar.md)).
+  No case folding, trimming or native prefix/suffix stripping. A symbol with a
+  letter is accepted only for brokers with publisher evidence of such codes
+  (KIS, DB, Toss, Meritz); Kiwoom and LS raise an unsupported-capability error.
   Do not strip leading zeros, accept integer symbols, or auto-guess ETFs/ETNs,
   indices, bonds or derivatives. Expand the instrument registry later.
 - **Proposed `venue` values:** `KRX`, `NXT`, `BROKER_COMPOSITE`.

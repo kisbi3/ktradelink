@@ -87,7 +87,13 @@ class KTradeLinkError(Exception):
 
 
 class InvalidSymbol(KTradeLinkError):
-    """The symbol is not exactly six ASCII digits (spec section 3)."""
+    """The symbol is not exactly six ASCII ``[0-9A-Z]`` characters (ADR 0016).
+
+    Nothing is case-folded, trimmed or stripped: lowercase, whitespace and
+    native prefixes or suffixes (``A005930``, ``005930_NX``) are rejected. A
+    well-formed alphanumeric symbol for a broker without evidence of such
+    codes raises ``UnsupportedCapability`` instead.
+    """
 
 
 class InvalidVenue(KTradeLinkError):

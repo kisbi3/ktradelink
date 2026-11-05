@@ -66,7 +66,7 @@ broker-side exchange route.
 | KIS | GET + KRX `J` + `fid_input_iscd`, `tr_id` | Bearer plus `appkey` / `appsecret` |
 | Kiwoom | POST JSON `stk_cd`, `api-id` | Bearer, separate real/paper host labels |
 | LS | POST t1102 `t1102InBlock` (`shcode`, `exchgubun=K`), `tr_cd` | Bearer; t1102 from the publisher API guide, gateway unverified |
-| DB | POST nested `In` (`InputCondMrktDivCode=J`, bare six-digit `InputIscd1`), `cont_yn=N` | Bearer; form token body from the API guide and official SDK (ADR 0015); the testbed's URL-query sample is **unsafe**, do not replicate |
+| DB | POST nested `In` (`InputCondMrktDivCode=J`, bare six-character `InputIscd1`), `cont_yn=N` | Bearer; form token body from the API guide and official SDK (ADR 0015); the testbed's URL-query sample is **unsafe**, do not replicate |
 | Toss | GET `symbols` query | Bearer, **NO account header** for public market quote |
 | Meritz | GET `mrkt_div_code=J`, `iscd` | Bearer plus required `mac_address` |
 
@@ -107,8 +107,10 @@ never logged or inserted into `Ticker.info`.
   paper mode fails loudly instead of falling back to a live host.
 - Only KRX input is accepted. Special KRX symbols accepted by the public
   `Ticker` value model do not automatically become valid provider query
-  symbols. Here only Toss's evidenced six-character alphanumeric style is
-  accepted; all five others use the conservative six-ASCII-digit example.
+  symbols. Every plan requires six ASCII `[0-9A-Z]` characters (ADR 0016).
+  A symbol with a letter is planned only for KIS, DB, Toss and Meritz, whose
+  publisher material shows such codes; Kiwoom and LS stay digit-only. No
+  gateway has confirmed that any quote route accepts an alphanumeric code.
 - DB's older testbed token sample includes URL-query credential fields and
   disables TLS validation. It is never copied. The API guide token detail and
   the official SDK at a pinned commit send a form body with TLS verification

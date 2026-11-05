@@ -37,6 +37,8 @@ from ktradelink._https_transport import (
     build_token_request,
 )
 from ktradelink._request_plan import (
+    _is_public_symbol,
+    _symbol_evidenced_for,
     authentication_requirements,
     decode_offline_quote_response,
     plan_ticker_request,
@@ -199,10 +201,15 @@ def _now_ms(stage: str, delivery: DeliveryState = DeliveryState.NOT_SENT) -> int
     return value
 
 
-def _check_symbol(symbol: object) -> None:
-    if (type(symbol) is not str or len(symbol) != 6 or not symbol.isascii()
-            or not symbol.isdigit()):
-        raise InvalidSymbol("symbol_must_be_six_ascii_digits")
+def _check_symbol(symbol: object, broker: str) -> None:
+    """ADR 0016: public grammar, then the per-broker rule; nothing is sent.
+
+    ``broker`` is required so that no caller can skip the per-broker rule.
+    """
+    if not _is_public_symbol(symbol):
+        raise InvalidSymbol("symbol_must_be_six_uppercase_alphanumerics")
+    if not _symbol_evidenced_for(broker, symbol):
+        raise UnsupportedCapability("alphanumeric_symbol_not_evidenced_for_broker")
 
 
 def _check_venue(venue: object) -> None:
@@ -382,13 +389,13 @@ class BrokerClient:
 
     def fetch_ticker(self, symbol: str, *, venue: str = "KRX",
                      params: Mapping[str, object] | None = None) -> Ticker:
-        """Current quote for one six-digit KRX stock code, as a ``Ticker``.
+        """Current quote for one six-character KRX stock code, as a ``Ticker``.
 
         Sends at most one token request (only when no reusable token is
         cached) and one quote request. Never retries. ``params`` must be
         ``None`` or empty. ``retrieved_at``/``timestamp`` are ``None``.
         """
-        _check_symbol(symbol)
+        _check_symbol(symbol, self._broker)
         _check_venue(venue)
         _check_params(params)
         if self._closed:

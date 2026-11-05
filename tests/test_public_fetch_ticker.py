@@ -341,15 +341,66 @@ def test_network_is_disabled_by_default_and_refused_before_any_socket(
     preflight.assert_not_called()
 
 
+@pytest.mark.parametrize("broker", BROKERS)
 @pytest.mark.parametrize("symbol", [
-    "5930", "0059300", "00593A", "005 30", "００５９３０", "", " 005930", 5930, None, True,
+    "5930", "0059300", "005 30", "００５９３０", "", " 005930", 5930, None, True,
     b"005930",
+    # ADR 0016: no case folding, trimming or native prefix/suffix stripping.
+    "0000d0", "0101n0", "abcdef", "A005930", "Q500001", "J005930", "005930_NX",
+    "005930_AL", "N-005930", "U-005930", "00593", "0000D", "0000D00", "123456789",
+    "0000Ｄ0", "00593é", "0059३0", "005930 ", "00 5930", "005930\n", "\t005930",
 ])
-def test_invalid_symbols_are_rejected_before_anything_else(symbol, no_network):
+def test_invalid_symbols_are_rejected_before_anything_else(broker, symbol, no_network):
     with pytest.raises(ktradelink.InvalidSymbol) as caught:
-        client().fetch_ticker(symbol)
+        client(broker).fetch_ticker(symbol)
+    assert caught.value.reason == "symbol_must_be_six_uppercase_alphanumerics"
     assert caught.value.delivery is DeliveryState.NOT_SENT
+    assert_clean(caught.value)
     no_network.assert_not_called()
+
+
+@pytest.mark.parametrize("broker", ["kiwoom", "ls"])
+@pytest.mark.parametrize("network", [True, False])
+@pytest.mark.parametrize("symbol", ["0000D0", "0101N0", "00593A", "ABCDEF"])
+def test_alphanumeric_symbol_is_unsupported_without_broker_evidence(
+        broker, network, symbol, no_network, monkeypatch):
+    # Kiwoom and LS documents neither show nor exclude alphanumeric codes
+    # (ADR 0016): a well-formed symbol is a capability gap, not a bad symbol,
+    # and it is refused with the other argument checks, before anything else.
+    preflight = MagicMock(return_value=True)
+    monkeypatch.setattr(_public_client, "_decoder_preflight", preflight)
+    with pytest.raises(ktradelink.UnsupportedCapability) as caught:
+        client(broker, allow_network=network).fetch_ticker(symbol)
+    assert caught.value.reason == "alphanumeric_symbol_not_evidenced_for_broker"
+    assert caught.value.delivery is DeliveryState.NOT_SENT
+    assert caught.value.stage is None
+    assert_clean(caught.value)
+    no_network.assert_not_called()
+    preflight.assert_not_called()
+
+
+@pytest.mark.parametrize("broker", BROKERS)
+def test_digit_symbols_pass_the_symbol_check_for_every_broker(broker, no_network):
+    disabled = client(broker, allow_network=False)
+    for symbol in ("005930", "000000", "999999"):
+        with pytest.raises(ktradelink.NetworkDisabled):
+            disabled.fetch_ticker(symbol)
+    no_network.assert_not_called()
+
+
+@pytest.mark.parametrize("symbol", ["0000D0", "0101N0", "005930", "ABCDEF"])
+def test_kis_sends_an_alphanumeric_symbol_verbatim(symbol, clock, monkeypatch, native):
+    # KIS master files carry six-character alphanumeric short codes (ADR 0016).
+    # Whether the inquire-price route accepts one is NOT verified; this only
+    # proves the symbol reaches the request unchanged and the result keeps it.
+    token_conn = connection(data=token_body("kis"))
+    quote_conn = connection(data=quote_body("kis"))
+    serve(monkeypatch, token_conn, quote_conn)
+    ticker = client("kis").fetch_ticker(symbol)
+    assert (ticker.symbol, ticker.venue, ticker.broker) == (symbol, "KRX", "kis")
+    assert quote_conn.request.call_args.args == (
+        "GET", "/uapi/domestic-stock/v1/quotations/inquire-price"
+               f"?fid_cond_mrkt_div_code=J&fid_input_iscd={symbol}")
 
 
 @pytest.mark.parametrize("venue,error", [

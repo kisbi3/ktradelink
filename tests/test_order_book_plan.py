@@ -106,12 +106,24 @@ def test_only_explicit_krx_is_planned(venue) -> None:
             plan_order_book_request(broker, "005930", venue=venue, environment="live")
 
 
-@pytest.mark.parametrize("symbol", ["5930", "0059300", "00593A", "005930_NX", "００５９３０",
-                                    5930, None, " 05930"])
-def test_symbols_reuse_the_six_digit_route_check(symbol) -> None:
+@pytest.mark.parametrize("symbol", ["5930", "0059300", "005930_NX", "００５９３０",
+                                    5930, None, " 05930", "0000d0", "A005930",
+                                    "Q500001", "0000Ｄ0"])
+def test_symbols_reuse_the_quote_route_check(symbol) -> None:
     for broker in LIVE:
         with pytest.raises(QuotePlanUnavailable, match="Symbol"):
             plan_order_book_request(broker, symbol, venue="KRX", environment="live")
+
+
+@pytest.mark.parametrize("symbol", ["0000D0", "0101N0", "00593A"])
+def test_alphanumeric_symbols_follow_the_per_broker_rule(symbol) -> None:
+    # ADR 0016: KIS master files carry such codes; Kiwoom documents neither
+    # show nor exclude them. Gateway acceptance is NOT verified.
+    with pytest.raises(QuotePlanUnavailable, match="Symbol"):
+        plan_order_book_request("kiwoom", symbol, venue="KRX", environment="live")
+    kis = plan_order_book_request("kis", symbol, venue="KRX", environment="live")
+    assert kis.symbol == symbol
+    assert kis.query == (("FID_COND_MRKT_DIV_CODE", "J"), ("FID_INPUT_ISCD", symbol))
 
 
 def test_limit_is_a_documented_per_side_cap() -> None:
