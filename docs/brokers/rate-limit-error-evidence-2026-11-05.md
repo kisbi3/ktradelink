@@ -737,8 +737,10 @@ under two HTTP statuses. `IGW00132` has two meanings: 403 "Content-Type이
 | "No data" returned as success? | **Both ways.** `00000` "모의투자 데이터가 없습니다." (success code, L108) **and** `2679` "조회내역이 없습니다" (non-success code, L121). Which routes use which is not documented. | D1 |
 
 `M205`/`M216` ("처리결과 확인후"), `IGW50011`/`IGW50012` (timeouts) and
-`IGW50005` (back-end communication) are outcome-UNKNOWN signals in the
+`IGW50005` (back-end communication) are outcome-unknown signals in the
 AGENTS.md sense. **Inference:** the broker may have processed the request.
+The response itself was received, so `delivery` is `RESPONSE_RECEIVED`;
+what is unknown is the processing outcome (G-E8).
 
 ### 5.5 Publisher retry / back-off behaviour (recorded, not adopted)
 
@@ -834,7 +836,7 @@ evidence that a retry is safe.
 | `IGW40342`, `IGW00303`, `M100` "모의투자에서는 해당업무가 제공되지 않습니다." | **Inference:** `PermissionDenied` | Same; `M100` would need message matching (D1 L192–193) |
 | `1887`, `3053`, `IGW40011` | **Inference:** broker-side "no such instrument" → `BrokerRejected`. `InvalidSymbol` is a local six-digit validation class (errors.py L89–90) and should not be reused without a decision. | Route-specific code list |
 | `IGW40010`/`IGW40012`/`IGW40017`/`IGW40018`/`IGW50002`/`2028` | **Inference:** `BrokerRejected` (request rejected). Some arrive as HTTP 500 → `BrokerUnavailable` today, which is misleading. | Same |
-| `IGW500xx`, `IGW00001`/`IGW00002`, `IGW40013`, `3665`, `8000`/`8001`, `M001`, `M205`/`M216` | **Inference:** `BrokerUnavailable` with delivery UNKNOWN where the code implies a timeout or "처리결과 확인" | Same |
+| `IGW500xx`, `IGW00001`/`IGW00002`, `IGW40013`, `3665`, `8000`/`8001`, `M001`, `M205`/`M216` | **Inference:** `BrokerUnavailable`; `delivery` stays `RESPONSE_RECEIVED` because a body was received, while the processing outcome is unknown where the code implies a timeout or "처리결과 확인" (G-E8) | Same |
 | HTTP 200 + `rsp_cd` ≠ `00000` (incl. `2679`, `2611`, `2218`) | **Inference:** `BrokerRejected` (current) | — |
 | HTTP 200 + `rsp_cd` missing | **Inference:** must become `ResponseSchemaError` (missing required status), closing the open gate | DB decoder change + test |
 | HTTP 200 + `00000` + empty `Out` ("모의투자 데이터가 없습니다.") | **Inference:** `ResponseSchemaError` for a single-quote route; needs a contract decision for list routes | — |
@@ -1396,10 +1398,11 @@ All points are **Inference:** from the six sections above.
   silent; Meritz's portal is silent on issuance, and its revoke kills
   every token of the app key. A common token cache cannot assume either
   behaviour.
-- **Delivery is never implied by a code.** Every body-coded error is
-  `RESPONSE_RECEIVED`, and DB `M205`/`M216`, `IGW50005`, `IGW50011`,
-  `IGW50012` explicitly leave the outcome open. No class can imply that a
-  resend is safe.
+- **A received code says nothing about the processing outcome.** Every
+  body-coded error has `delivery` `RESPONSE_RECEIVED`, because a response
+  was received. DB `M205`/`M216`, `IGW50005`, `IGW50011` and `IGW50012`
+  still leave the processing outcome open (G-E8). No class can imply that
+  a resend is safe.
 - **"No data" has no common shape**, even within one broker (KIS, DB).
 
 ## 9. Relation to existing code and docs
@@ -1455,7 +1458,7 @@ describe what the existing status-only mapping would do.
 | KIS | Throttle = 429, auth failure = 401; `rt_cd` `"0"` | Throttle `EGW00201` in the body, status undocumented; token expiry `EGW00123` on HTTP 200 (legacy); token 1/min | Throttling and token expiry on HTTP 200 surface as `BrokerRejected`; the expired token is not dropped; no token-request pacing |
 | Kiwoom | `return_code` integer `0` on quote **and** token; only 401 drops the token | `return_code` may be int or numeric string (client); not in the token field table; `8005` (or `3` + "[8005:…]") on HTTP 200; `1700`–`1702` in the body | A string `"0"` or a token response without `return_code` fails closed; throttle and invalid-token bodies surface as `BrokerRejected`; the rejected token is kept |
 | LS | `rsp_cd` `"00000"` required; 429 = throttle | Per-TR TPS only; no over-limit response documented; OAuth failures on HTTP 200 | Matches what is documented; an LS throttle signal is unknown, so its class is unknown |
-| DB (if enabled) | Status-only classes; decoder accepts a missing `rsp_cd` | `IGW00201` under **403 or 500**; token codes under 403/400; client-validation codes under 500; `rsp_cd` `"00000"` required (D2 L82–83) | `IGW00201` would surface as `PermissionDenied` (403) or `BrokerUnavailable` (500), not `RateLimitExceeded`; token errors as `PermissionDenied`; a body without `rsp_cd` would decode as success |
+| DB (if enabled) | Status-only classes; decoder accepts a missing `rsp_cd` | `IGW00201` under **403 or 500**; token codes under 403/400; client-validation codes under 500; `rsp_cd` `"00000"` required (D2 L82–83) | `IGW00201` would surface as `PermissionDenied` (403) or `BrokerUnavailable` (500), not `RateLimitExceeded`; token errors as `PermissionDenied`; a body without `rsp_cd` would decode as success (PR #35 addresses this; G-E14) |
 | Toss (if enabled) | Status-only classes | 429/401/403/404/500 with documented meanings; one valid token per client | 429, 401, 403 and 500 match; 404 `stock-not-found` and 400 become `TransportError`; `token-revoked` is not distinguished from expiry |
 | Meritz (if enabled) | Status-only classes; decoder `rsp_cd` `"0000"` optional; no `shrn_iscd` check | Every error HTTP 500 (with exceptions); throttle `EGW00200`/`EGW00201`; unknown symbol returns `"0000"` with empty values | Every error, including throttle, token and permission, would surface as `BrokerUnavailable`; an unknown symbol might not be detected |
 
@@ -1503,9 +1506,20 @@ are in brackets.
   2025-11-05); [DB] app limit cut to 1 TPS on IPO days by notice; [Toss]
   "사전 공지 없이 조정". Any hard-coded table must carry its source pin and
   version, and must not be presented as a guarantee.
-- **G-E8 Outcome-unknown codes:** [DB] `M205`/`M216` ("처리결과
-  확인후"), `IGW50005`, `IGW50011`, `IGW50012`; [Meritz] timeouts per M10.
-  Delivery stays UNKNOWN; never retried.
+- **G-E8 Outcome-unknown codes:** keep two separate questions apart.
+  - *Delivery* (`errors.py` `DeliveryState`) describes the transport step.
+    If an error body was received, for example [DB] `M205`/`M216`
+    ("처리결과 확인후"), `IGW50005`, `IGW50011` or `IGW50012`, delivery is
+    `RESPONSE_RECEIVED`, as `_https_transport.py` already records for any
+    HTTP response. Only a write whose response was never received (a
+    timeout or broken connection after sending, e.g. [Meritz] timeouts per
+    M10) has delivery `UNKNOWN`.
+  - *Processing outcome* (whether the broker accepted or executed the
+    request) is unknown in **both** cases above. This is a separate
+    concept; this document does not propose a public field for it. A
+    later order-path ADR must decide how to expose it.
+  - In both cases a non-idempotent request is never retried
+    automatically.
 
 ### 10.2 Broker-specific
 
@@ -1519,10 +1533,13 @@ are in brackets.
   surface it as `PermissionDenied` or `BrokerUnavailable`, never
   `RateLimitExceeded`. Classifying it needs `rsp_cd` from the error body
   (G-E1).
-- **G-E12 [Meritz] all-500 errors:** every Meritz error, including
-  throttle, token, permission and parameter errors, is HTTP 500 (M3; M7
-  L8–9), so status-only mapping turns all of them into
-  `BrokerUnavailable`. Any enablement needs broker-specific `rsp_cd`
+- **G-E12 [Meritz] mostly-500 errors:** Meritz errors, including
+  throttle, token, permission and parameter errors, are almost all HTTP
+  500 (M3; M7 L8–9), with documented exceptions: `EGW00103` sometimes as
+  HTTP 403 (M7 L75; M10 L242), HTTP 500 with `rsp_cd` `"0000"`, and HTTP
+  200 with a corrupted `rsp_cd` (§7.6 #4). Status-only mapping therefore
+  turns most of them into `BrokerUnavailable`, and neither status nor
+  `rsp_cd` alone classifies a response. Any enablement needs broker-specific `rsp_cd`
   interpretation (an ADR change) first, above all before any order path.
 - **G-E13 [Meritz] rate-limit scope:** neither "1계좌당 10건/초", all REST
   summed (M4 notice; M12 FAQ), nor "API 당 초당 10건" (M7 L95; M8 L120;
@@ -1532,7 +1549,9 @@ are in brackets.
   Likewise, do not treat one code as the only throttle signal until
   `EGW00200` vs `EGW00201` is resolved (§7.6 #2).
 - **G-E14 [DB] required `rsp_cd`:** make the DB root `rsp_cd` required
-  with exact value `"00000"`, as LS t1102 already is. Evidence: D2
+  with exact value `"00000"`, as LS t1102 already is. This is true of
+  `main` at the base of this audit; PR #35 (HEAD `ccf0d9f`, unmerged when
+  this was written) implements it, so do not open a duplicate task. Evidence: D2
   (`dbsec_sdk/response.py`) L82–83, DP3 examples, D1 L56 / L106–109. Add a
   regression test for a body without `rsp_cd`.
 - **G-E15 [Toss] token sharing and limits:** one valid token per client;
