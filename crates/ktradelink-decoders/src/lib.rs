@@ -33,8 +33,9 @@ pub enum DecodeKind {
     InvalidLimit,
     /// A requested per-side depth beyond the publisher-documented depth.
     DepthExceeded,
-    /// A quoted book level after an empty ("no quote") rank on the same side.
-    LevelGap,
+    /// A zero-price, zero-quantity book level. No publisher documents what it
+    /// means, so it is neither dropped nor turned into a level (ADR 0003).
+    UnverifiedEmptyLevel,
 }
 
 /// Errors never include raw input, token fields, account numbers or JSON excerpts.

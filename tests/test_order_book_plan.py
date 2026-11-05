@@ -161,7 +161,8 @@ def test_non_plans_are_rejected() -> None:
             decode_offline_order_book_response(bad, http_status=200, json_text="{}")
 
 
-@pytest.mark.parametrize("status", [199, 300, 404, 500, True, "200", 200.0, None])
+@pytest.mark.parametrize("status", [199, 201, 204, 299, 300, 404, 500, True, "200", 200.0,
+                                    None])
 def test_unsuccessful_or_untyped_http_status_never_reaches_the_decoder(
     status, monkeypatch
 ) -> None:

@@ -57,9 +57,11 @@ decoder runs.
   source sent them. Unordered or duplicate levels are errors and are never
   sorted. Crossed and locked books are kept.
 - A level with a positive price keeps its quantity, even `0`.
-- A rank with price `0` **and** quantity `0` counts as "no quote". Such ranks
-  may only end a side. A quote after one is `LevelGap`. A zero price with a
-  quantity is `InvalidPrice`.
+- A zero price is never interpreted, because no publisher documents how an
+  empty rank is encoded. Price `0` with quantity `0` is
+  `UnverifiedEmptyLevel`; a zero price with a quantity is `InvalidPrice`.
+  Neither is dropped, so a thin book with fewer than 10 quoted ranks per
+  side currently fails, even with a smaller `limit`.
 - Missing, `null`, blank, signed or wrongly typed fields are errors. They
   are never read as an empty level.
 - `limit` is per side, `1..10`. Above 10 it raises `DepthExceeded` and is

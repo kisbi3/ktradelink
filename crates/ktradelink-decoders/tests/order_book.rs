@@ -133,47 +133,46 @@ fn crossed_and_locked_books_are_preserved() {
 }
 
 #[test]
-fn zero_zero_tail_is_no_quote_but_never_synthesized_or_gapped() {
+fn zero_price_levels_fail_closed_and_are_never_dropped() {
+    // No publisher documents an empty-rank encoding (ADR 0003, ChatGPT review
+    // of PR #29 M1): a 0/0 level is never read as "no quote" and removed.
     for (broker, fixture) in BROKERS {
-        // Ranks 8..10 empty on the bid side -> exactly 7 bids, asks intact.
-        let payload = edited(broker, fixture, |r| {
-            for n in 8..=10 {
-                let (p, q) = keys(broker, false, n);
-                r.insert(p, native(broker, 0));
-                r.insert(q, native(broker, 0));
-            }
-        });
-        let book = ok(broker, &payload, None);
-        assert_eq!((book.input().bids.len(), book.input().asks.len()), (7, 10));
-        // limit larger than what the source quoted returns only real levels.
-        assert_eq!(ok(broker, &payload, Some(9)).input().bids.len(), 7);
-
-        // Entire ask side empty -> empty asks, not an error.
-        let empty = edited(broker, fixture, |r| {
-            for n in 1..=10 {
+        // A 0/0 tail on the ask side (ranks 3..10) is refused, not shortened.
+        let (p3, _) = keys(broker, true, 3);
+        let tail = edited(broker, fixture, |r| {
+            for n in 3..=10 {
                 let (p, q) = keys(broker, true, n);
                 r.insert(p, native(broker, 0));
                 r.insert(q, native(broker, 0));
             }
         });
-        assert!(ok(broker, &empty, None).input().asks.is_empty());
+        let e = err(broker, &tail);
+        assert_eq!((e.field, e.kind), (p3.as_str(), DecodeKind::UnverifiedEmptyLevel));
+        // A limit that would hide the 0/0 ranks does not make the book valid.
+        let capped = decode(broker, "005930", Venue::Krx, &tail, Some(2));
+        assert_eq!(capped.unwrap_err().kind, DecodeKind::UnverifiedEmptyLevel);
 
-        // An empty rank followed by a quoted rank is a gap, not a book.
-        let (p5, q5) = keys(broker, true, 5);
-        let (p6, _) = keys(broker, true, 6);
-        let gap = edited(broker, fixture, |r| {
-            r.insert(p5, native(broker, 0));
-            r.insert(q5, native(broker, 0));
+        // A single 0/0 rank at the deepest bid level is refused too.
+        let (p10, q10) = keys(broker, false, 10);
+        let last = edited(broker, fixture, |r| {
+            r.insert(p10.clone(), native(broker, 0));
+            r.insert(q10, native(broker, 0));
         });
-        let e = err(broker, &gap);
-        assert_eq!(e.kind, DecodeKind::LevelGap);
-        assert_eq!(e.field, p6);
+        let e = err(broker, &last);
+        assert_eq!((e.field, e.kind), (p10.as_str(), DecodeKind::UnverifiedEmptyLevel));
 
         // Zero price with resting quantity is malformed.
         let (p1, _) = keys(broker, false, 1);
         let bad = edited(broker, fixture, |r| { r.insert(p1.clone(), native(broker, 0)); });
         let e = err(broker, &bad);
         assert_eq!((e.field, e.kind), (p1.as_str(), DecodeKind::InvalidPrice));
+
+        // A positive price with zero quantity stays a real level.
+        let (_, q2) = keys(broker, true, 2);
+        let resting = edited(broker, fixture, |r| { r.insert(q2, native(broker, 0)); });
+        let book = ok(broker, &resting, None);
+        assert_eq!(book.input().asks.len(), 10);
+        assert_eq!(book.input().asks[1].quantity(), 0);
     }
 }
 

@@ -74,7 +74,9 @@ def test_native_function_requires_keyword_limit() -> None:
 
 
 @pytest.mark.parametrize("broker", list(FILES))
-def test_empty_tail_shortens_a_side_and_gap_is_rejected(broker: str) -> None:
+def test_zero_price_levels_fail_closed_instead_of_shortening_a_side(broker: str) -> None:
+    """No publisher documents an empty-rank encoding, so a 0/0 level is never
+    dropped (ADR 0003; ChatGPT review of PR #29, M1)."""
     zero = 0 if broker == "ls" else "0"
     keys = {"kis": ("bidp{}", "bidp_rsqn{}"), "ls": ("bidho{}", "bidrem{}"),
             "kiwoom": ("buy_{}th_pre_bid", "buy_{}th_pre_req")}[broker]
@@ -82,8 +84,12 @@ def test_empty_tail_shortens_a_side_and_gap_is_rejected(broker: str) -> None:
     for n in (9, 10):
         book_row(broker, doc)[keys[0].format(n)] = zero
         book_row(broker, doc)[keys[1].format(n)] = zero
-    book = decode_order_book_candidate(broker, "005930", "KRX", json.dumps(doc))
-    assert book.bids == BIDS[:8]
+    with pytest.raises(ValueError) as caught:
+        decode_order_book_candidate(broker, "005930", "KRX", json.dumps(doc))
+    assert str(caught.value) == f"{keys[0].format(9)}: UnverifiedEmptyLevel"
+    # A limit that hides the 0/0 ranks does not turn it into a valid book.
+    with pytest.raises(ValueError, match="UnverifiedEmptyLevel"):
+        decode_order_book_candidate(broker, "005930", "KRX", json.dumps(doc), limit=2)
     book_row(broker, doc)[keys[1].format(9)] = 1 if broker == "ls" else "1"
     with pytest.raises(ValueError, match="InvalidPrice"):
         decode_order_book_candidate(broker, "005930", "KRX", json.dumps(doc))

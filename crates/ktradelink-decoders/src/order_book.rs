@@ -118,28 +118,26 @@ fn level_quantity(row: &Row, key: &'static str, wire: Wire) -> Result<u64, Decod
 
 /// Reads all documented levels of one side, best first.
 ///
-/// Library policy (no publisher documents an empty level): a level whose
-/// price is numerically zero AND whose quantity is zero means "no quote at
-/// this rank". It is omitted, never turned into a level, and every deeper
-/// level on that side must be empty too; a quote after an empty rank is a
-/// `LevelGap`. A zero price with a nonzero quantity is malformed
-/// (`InvalidPrice`). Missing, null, blank or wrongly typed fields always fail.
+/// No publisher documents how an empty rank is encoded, so a zero price is
+/// never interpreted (ADR 0003: placeholders are resolved with evidence, not
+/// silently dropped). Zero price with zero quantity is `UnverifiedEmptyLevel`;
+/// zero price with a nonzero quantity is `InvalidPrice`. Missing, null, blank
+/// or wrongly typed fields always fail. A positive price with zero quantity is
+/// a real level and is kept.
 fn side(row: &Row, layout: &Side, wire: Wire) -> Result<Vec<BookLevel>, DecodeError> {
     let mut levels = Vec::with_capacity(ORDER_BOOK_DEPTH);
-    let mut ended = false;
     for &(price_key, quantity_key) in layout {
         let price = level_price(row, price_key, wire)?;
         let quantity = level_quantity(row, quantity_key, wire)?;
         if price.is_zero() {
-            if quantity != 0 {
-                return Err(error(price_key, DecodeKind::InvalidPrice));
-            }
-            ended = true;
-        } else if ended {
-            return Err(error(price_key, DecodeKind::LevelGap));
-        } else {
-            levels.push(BookLevel::new(price, quantity, price_key)?);
+            let kind = if quantity == 0 {
+                DecodeKind::UnverifiedEmptyLevel
+            } else {
+                DecodeKind::InvalidPrice
+            };
+            return Err(error(price_key, kind));
         }
+        levels.push(BookLevel::new(price, quantity, price_key)?);
     }
     Ok(levels)
 }
@@ -159,8 +157,8 @@ fn required_integer_zero(record: &Row, key: &'static str) -> Result<(), DecodeEr
 /// `limit` caps the levels returned on EACH side after the full documented
 /// depth has been validated. `None` returns every non-empty documented level.
 /// `Some(0)` is `InvalidLimit`; more than the documented depth is
-/// `DepthExceeded` (never silently clamped). Fewer levels than `limit` are
-/// returned only when the source itself reported empty ranks.
+/// `DepthExceeded` (never silently clamped). Every documented level must be a
+/// real quote, so each side always has exactly the documented depth.
 pub fn decode_order_book_candidate(
     broker: Broker,
     symbol: &str,

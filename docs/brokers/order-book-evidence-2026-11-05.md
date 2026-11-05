@@ -113,10 +113,11 @@ Not documented / unverified:
 - **Every documented level field is required.** Missing, `null`, blank,
   signed, exponent, float or wrongly typed values fail; they are never
   read as "no quote".
-- **Empty rank:** no source documents one. A rank whose price is
-  numerically zero **and** quantity is zero is treated as "no quote at this
-  rank" and omitted. It may only form a contiguous tail; a quote after it is
-  `LevelGap`. A zero price with non-zero quantity is `InvalidPrice`.
+- **Empty rank:** no source documents one, so a zero price is never
+  interpreted (ADR 0003). A rank whose price **and** quantity are zero is
+  `UnverifiedEmptyLevel`; a zero price with non-zero quantity is
+  `InvalidPrice`. Neither is dropped or turned into a level, whatever
+  `limit` is.
   Nothing is synthesized, sorted, merged or deduplicated.
 - **Zero quantity at a quoted price is kept** (the LS t8450 example shows
   such levels).

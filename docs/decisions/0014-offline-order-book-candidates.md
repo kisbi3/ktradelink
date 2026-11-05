@@ -39,10 +39,13 @@ has no exchange selector.
    - All 10 documented levels per side are required. KIS/Kiwoom accept
      unsigned digit strings and LS unsigned JSON integers. Signed Kiwoom
      prices are rejected, never `abs()`-ed.
-   - A zero-price **and** zero-quantity rank means "no quote" and may only
-     form a contiguous tail (`LevelGap` otherwise); a zero price with
-     quantity is `InvalidPrice`. This interpretation is library policy: no
-     publisher documents an empty rank.
+   - A zero price is never interpreted. No publisher documents how an empty
+     rank is encoded, and ADR 0003 forbids silently dropping a placeholder,
+     so a zero-price **and** zero-quantity rank is `UnverifiedEmptyLevel` and
+     a zero price with quantity is `InvalidPrice`; neither yields a book,
+     whatever `limit` is. Each decoded side therefore has exactly 10 levels.
+     An empty-rank rule may be added later only with publisher evidence or
+     authorised fixtures (ChatGPT review of PR #29, M1).
    - Ordering is checked over the full book, then `limit` caps each side
      (`0` → `InvalidLimit`, `>10` → `DepthExceeded`).
    - Same strict JSON (duplicate keys at any depth), 1 MiB bound and
@@ -70,8 +73,9 @@ has no exchange selector.
 
 - Kiwoom real responses are expected to carry signed prices and will fail
   closed until the sign meaning is documented. LS can be decoded but not
-  planned. KIS JSON types and empty-rank encoding are assumptions that
-  fail closed if wrong.
+  planned. KIS JSON types are an assumption that fails closed if wrong. Any
+  real book with fewer than 10 quoted ranks per side (e.g. a thin or halted
+  stock) fails with `UnverifiedEmptyLevel` until the encoding is evidenced.
 - KIS and Kiwoom books are not bound to the requested symbol by their
   responses. Only the LS echo is checked.
 - No public `fetch_order_book`, no capability flag and no `supported`

@@ -144,7 +144,8 @@ def decode_offline_order_book_response(
     )
     if plan != expected:
         raise QuotePlanUnavailable("Unrecognized or modified offline order-book plan")
-    if type(http_status) is not int or not 200 <= http_status < 300:
+    # Exactly 200, as the offline quote path (ADR 0008): a 204 has no body.
+    if type(http_status) is not int or http_status != 200:
         raise OfflineResponseRejected("Offline HTTP response is not successful")
     if type(json_text) is not str:
         raise OfflineResponseRejected("Offline response body must be JSON text")
