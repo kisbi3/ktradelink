@@ -2,8 +2,13 @@
 
 Never read the environment, disk, OS keychain, accounts or device identifiers.
 No token exchange happens here. This is not a public broker client.
+
+Thread safety is limited to one process: the provider and cache serialise
+their own operations with locks, and the cache checks credential currency and
+writes a lease as one step. Nothing here coordinates across processes.
 """
 
+import threading
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Protocol
@@ -16,6 +21,7 @@ class CredentialFailure(Enum):
     MISSING = "credential_not_supplied"
     STALE = "credential_revision_changed"
     TOKEN_MISSING = "token_not_supplied_or_expired"
+    SUPERSEDED = "newer_token_already_cached"
 
 
 class CredentialError(RuntimeError):
@@ -98,24 +104,28 @@ class CredentialProvider(Protocol):
 class InMemoryCredentialProvider:
     """Instance-local store; callers opt in to supplying every secret explicitly."""
 
-    __slots__ = ("_entries", "_revision")
+    __slots__ = ("_entries", "_revision", "_lock")
 
     def __init__(self) -> None:
         self._entries: dict[CredentialIdentity, CredentialSnapshot] = {}
         self._revision = 0
+        # Re-entrant: InMemoryTokenCache.put holds it across require_current().
+        self._lock = threading.RLock()
 
     def put(self, identity: CredentialIdentity, pair: CredentialPair) -> CredentialSnapshot:
         if type(identity) is not CredentialIdentity or type(pair) is not CredentialPair:
             raise CredentialError(CredentialFailure.INVALID)
-        self._revision += 1
-        snapshot = CredentialSnapshot(identity, self._revision, pair, self)
-        self._entries[identity] = snapshot
+        with self._lock:
+            self._revision += 1
+            snapshot = CredentialSnapshot(identity, self._revision, pair, self)
+            self._entries[identity] = snapshot
         return snapshot
 
     def load(self, identity: CredentialIdentity) -> CredentialSnapshot:
         if type(identity) is not CredentialIdentity:
             raise CredentialError(CredentialFailure.INVALID)
-        snapshot = self._entries.get(identity)
+        with self._lock:
+            snapshot = self._entries.get(identity)
         if snapshot is None:
             raise CredentialError(CredentialFailure.MISSING)
         return snapshot
@@ -123,13 +133,16 @@ class InMemoryCredentialProvider:
     def require_current(self, snapshot: CredentialSnapshot) -> None:
         if type(snapshot) is not CredentialSnapshot or snapshot.owner is not self:
             raise CredentialError(CredentialFailure.STALE)
-        if self._entries.get(snapshot.identity) is not snapshot:
+        with self._lock:
+            current = self._entries.get(snapshot.identity)
+        if current is not snapshot:
             raise CredentialError(CredentialFailure.STALE)
 
     def clear(self, identity: CredentialIdentity) -> None:
         if type(identity) is not CredentialIdentity:
             raise CredentialError(CredentialFailure.INVALID)
-        self._entries.pop(identity, None)
+        with self._lock:
+            self._entries.pop(identity, None)
 
     def __repr__(self) -> str:
         return "InMemoryCredentialProvider(<redacted>)"
@@ -142,6 +155,9 @@ class BearerLease:
     snapshot: CredentialSnapshot = field(repr=False, compare=False)
     access_token: str = field(repr=False, compare=False)
     expires_at_ms: int
+    # Process-wide order of the token send that produced this lease, attested
+    # by the HTTPS transport. None for a lease the caller put in directly.
+    issue_sequence: int | None = None
 
     def __post_init__(self) -> None:
         if type(self.snapshot) is not CredentialSnapshot:
@@ -150,31 +166,52 @@ class BearerLease:
                 or any(char in self.access_token for char in "\r\n\x00")):
             raise CredentialError(CredentialFailure.INVALID)
         _nonnegative(self.expires_at_ms)
+        if self.issue_sequence is not None and (
+                type(self.issue_sequence) is not int or self.issue_sequence < 1):
+            raise CredentialError(CredentialFailure.INVALID)
 
     def __repr__(self) -> str:
         return "BearerLease(<redacted>)"
 
 
 class InMemoryTokenCache:
-    """Strict broker/environment/profile/provider/revision binding; no refresh."""
+    """Strict broker/environment/profile/provider/revision binding; no refresh.
 
-    __slots__ = ("_entries",)
+    A lease from a later attested token send is never replaced by one from an
+    earlier send, so a slow, out-of-order exchange cannot reinstate an older
+    token. Lock order is always provider, then cache.
+    """
+
+    __slots__ = ("_entries", "_lock")
 
     def __init__(self) -> None:
         self._entries: dict[tuple[InMemoryCredentialProvider, CredentialIdentity], BearerLease] = {}
+        self._lock = threading.Lock()
 
     def put(
         self, provider: InMemoryCredentialProvider, snapshot: CredentialSnapshot,
         *, access_token: str, expires_at_ms: int, now_ms: int,
+        issue_sequence: int | None = None,
     ) -> BearerLease:
         if type(provider) is not InMemoryCredentialProvider:
             raise CredentialError(CredentialFailure.INVALID)
-        provider.require_current(snapshot)
         _nonnegative(now_ms)
         if type(expires_at_ms) is not int or expires_at_ms <= now_ms:
             raise CredentialError(CredentialFailure.INVALID)
-        lease = BearerLease(snapshot, access_token, expires_at_ms)
-        self._entries[(provider, snapshot.identity)] = lease
+        # Hold the provider lock so a rotation cannot land between the
+        # currency check and the write.
+        with provider._lock:
+            provider.require_current(snapshot)
+            lease = BearerLease(snapshot, access_token, expires_at_ms, issue_sequence)
+            cache_key = (provider, snapshot.identity)
+            with self._lock:
+                existing = self._entries.get(cache_key)
+                if (issue_sequence is not None and existing is not None
+                        and existing.snapshot is snapshot
+                        and existing.issue_sequence is not None
+                        and existing.issue_sequence > issue_sequence):
+                    raise CredentialError(CredentialFailure.SUPERSEDED)
+                self._entries[cache_key] = lease
         return lease
 
     def get(
@@ -187,18 +224,25 @@ class InMemoryTokenCache:
         _nonnegative(min_remaining_ms)
         snapshot = provider.load(identity)
         cache_key = (provider, identity)
-        lease = self._entries.get(cache_key)
-        if lease is None:
-            raise CredentialError(CredentialFailure.TOKEN_MISSING)
-        if lease.snapshot is not snapshot or now_ms + min_remaining_ms >= lease.expires_at_ms:
-            self._entries.pop(cache_key, None)
+        with self._lock:
+            lease = self._entries.get(cache_key)
+            if lease is None:
+                missing = True
+            elif (lease.snapshot is not snapshot
+                    or now_ms + min_remaining_ms >= lease.expires_at_ms):
+                del self._entries[cache_key]  # same lock: this is the judged lease
+                missing = True
+            else:
+                missing = False
+        if missing:
             raise CredentialError(CredentialFailure.TOKEN_MISSING)
         return lease
 
     def revoke(self, provider: InMemoryCredentialProvider, identity: CredentialIdentity) -> None:
         if type(provider) is not InMemoryCredentialProvider or type(identity) is not CredentialIdentity:
             raise CredentialError(CredentialFailure.INVALID)
-        self._entries.pop((provider, identity), None)
+        with self._lock:
+            self._entries.pop((provider, identity), None)
 
     def __repr__(self) -> str:
         return "InMemoryTokenCache(<redacted>)"

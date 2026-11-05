@@ -254,10 +254,10 @@ def test_explicit_error_with_token_fields_is_not_success(field):
     assert caught.value.__context__ is None
 
 
-def test_kis_naive_expiry_does_not_silently_assume_kst():
+def test_kis_naive_expiry_does_not_silently_assume_kst(receive_token_response):
     identity, provider, cache = setup("kis")
-    response = WireResponse(build_token_request(identity, provider), 200,
-                            json.dumps(token_fields("kis")).encode())
+    response = receive_token_response(build_token_request(identity, provider),
+                                      json.dumps(token_fields("kis")).encode())
     with pytest.raises(TokenError) as caught:
         save_example_token_response(response, identity, provider, cache, now_ms=0)
     assert caught.value.kind is TokenFailure.EVIDENCE_MISSING
