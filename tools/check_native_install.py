@@ -25,6 +25,23 @@ from ktradelink._native import NativeCoreUnavailable, build_ticker, decode_ticke
 from ktradelink._request_plan import (
     authentication_requirements, decode_offline_quote_response, plan_ticker_request
 )
+from ktradelink._credential_runtime import (
+    CredentialIdentity, CredentialPair, InMemoryCredentialProvider,
+)
+from ktradelink._https_transport import (
+    HttpsTransport, TransportError, TransportFailure, build_token_request,
+)
+identity = CredentialIdentity("kiwoom", "live", "wheel-smoke")
+p = InMemoryCredentialProvider()
+p.put(identity, CredentialPair("SYNTHETIC_KEY", "SYNTHETIC_SECRET"))
+req = build_token_request(identity, p)
+assert "SYNTHETIC_SECRET" not in repr(req)
+try:
+    HttpsTransport().send(req)
+except TransportError as exc:
+    assert exc.kind is TransportFailure.NOT_ENABLED
+else:
+    raise AssertionError("network-enabled default on installed wheel")
 assert Ticker("005930", "KRX", "synthetic", Decimal(0)).last == 0
 plan = plan_ticker_request("kis", "005930", venue="KRX", environment="live")
 assert plan.method == "GET" and plan.transport_implemented is False
@@ -76,6 +93,23 @@ from ktradelink._offline_session import (
     execute_offline_quote,
 )
 from ktradelink.models import Ticker
+from ktradelink._credential_runtime import (
+    CredentialIdentity, CredentialPair, InMemoryCredentialProvider,
+)
+from ktradelink._https_transport import (
+    HttpsTransport, TransportError, TransportFailure, build_token_request,
+)
+identity = CredentialIdentity("kiwoom", "live", "wheel-smoke")
+p = InMemoryCredentialProvider()
+p.put(identity, CredentialPair("SYNTHETIC_KEY", "SYNTHETIC_SECRET"))
+req = build_token_request(identity, p)
+assert "SYNTHETIC_SECRET" not in repr(req)
+try:
+    HttpsTransport().send(req)
+except TransportError as exc:
+    assert exc.kind is TransportFailure.NOT_ENABLED
+else:
+    raise AssertionError("network-enabled default on installed wheel")
 root = Path(sys.prefix).resolve()
 for module in (ktradelink, _ktradelink_native):
     assert Path(module.__file__).resolve().is_relative_to(root), module.__file__
