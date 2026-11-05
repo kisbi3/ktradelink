@@ -30,11 +30,12 @@ def setup(broker):
     ('kis', {'access_token':'SYNTHETIC_KIS','access_token_token_expired':'2027-01-02 12:01:03'}),
     ('kiwoom',{'token':'SYNTHETIC_KIWOOM','expires_dt':'20270102120103','return_code':0}),
 ])
-def test_token_example_parses_exact_publisher_expiry_and_scoped_cache(broker,fields):
+def test_token_example_parses_exact_publisher_expiry_and_scoped_cache(
+        broker, fields, receive_token_response):
     identity,provider,req=setup(broker)
     cache=InMemoryTokenCache()
     fields = {**fields, 'token_type': 'Bearer'}
-    response=WireResponse(req,200,json.dumps(fields).encode('utf-8'))
+    response=receive_token_response(req,json.dumps(fields).encode('utf-8'))
     issued=save_example_token_response(
         response,identity,provider,cache,now_ms=0,
         kis_expiry_timezone=KST if broker == 'kis' else None,

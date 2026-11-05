@@ -38,9 +38,15 @@ save an explicitly scoped, expiring lease, but it does not contact a broker.
 Token type must be explicit, and Kiwoom's return_code must be integer zero.
 LS returns a relative lifetime in one of its two documented forms: the
 example's `expires_in` JSON integer or the field table's `expire_in` decimal
-string (mixed or duplicate forms fail). `scope` must be `oob`, and the
-lease expires that many seconds after the `now_ms` you pass — so pass the time
-*before* sending the token request.
+string (mixed or duplicate forms fail). `scope` must be `oob`. The lease
+expires that many seconds after the transport's own clock reading taken just
+before the request write; the `now_ms` you pass only rejects an expiry that
+has already passed (ADR 0011).
+Only a response that `HttpsTransport.send` itself received can be saved
+(`TokenFailure.UNATTESTED` otherwise), and a token from an earlier send never
+replaces one from a later send (`TokenFailure.SUPERSEDED`). Offline tests reach
+this path through a mocked HTTPS connection (`receive_token_response` in
+`tests/conftest.py`).
 KIS's sample expiry has no timezone information: `save_example_token_response`
 requires an explicit `kis_expiry_timezone=datetime.timezone(...)` for a valid
 KIS response. Do not guess this for production. Synthetic test offsets are not
@@ -57,7 +63,11 @@ construction or per call, so a network-enabled sender cannot be handed a
 frozen or rolled-back time. Offline tests patch the module-private
 `_wall_clock_ms` instead; that is test scaffolding, not an API. An invalid
 clock reading fails with `INVALID_REQUEST` before anything is written.
-Concurrent modification across threads/processes is not supported or attested.
+Within one process, the provider and cache are lock-protected, and at most one
+token send per provider and credential identity is in flight. A second one
+fails with `TOKEN_IN_FLIGHT` before connecting. Nothing coordinates across
+processes: two processes sharing an app key can still invalidate each
+other's tokens.
 
 A production real HTTPS client would need a **separate reviewed authorization**
 and explicit opt-in. Even then, only three broker token request/response candidates

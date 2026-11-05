@@ -11,6 +11,7 @@ from enum import Enum
 from ktradelink._credential_runtime import (
     BearerLease,
     CredentialError,
+    CredentialFailure,
     CredentialIdentity,
     InMemoryCredentialProvider,
     InMemoryTokenCache,
@@ -20,6 +21,7 @@ from ktradelink._https_transport import (
     TransportError,
     WireRequest,
     WireResponse,
+    _token_send_attestation,
 )
 from ktradelink._request_plan import AuthRequirements
 
@@ -32,6 +34,8 @@ class TokenFailure(Enum):
     INVALID_RESPONSE = "token_response_invalid_or_unverified"
     EVIDENCE_MISSING = "token_expiry_timezone_not_supplied"
     STALE_CREDENTIAL = "credentials_changed_during_token_exchange"
+    UNATTESTED = "token_response_not_received_by_transport"
+    SUPERSEDED = "newer_token_already_cached"
 
 
 def _ls_lifetime_seconds(field: str, value: object) -> int:
@@ -67,9 +71,13 @@ def save_example_token_response(
     Uses publisher example expiration fields, not an inferred TTL. KIS's
     sample has a naive timestamp: a caller must explicitly supply its fixed
     timezone interpretation; synthetic fixture context is not live evidence.
-    LS returns a relative lifetime in seconds; the lease expires that long
-    after ``now_ms``, so pass the time *before* the request was sent to avoid
-    overstating the lifetime by the round trip.
+    Only a response that ``HttpsTransport`` itself received is cached
+    (``UNATTESTED`` otherwise). LS returns a relative lifetime in seconds; the
+    lease expires that long after the transport's own clock reading taken
+    just before the request write, never after the caller's ``now_ms``, so
+    the lifetime cannot be stretched. ``now_ms`` only rejects an expiry that
+    has already passed. A token from an earlier send never replaces one from a
+    later send (``SUPERSEDED``).
     A failed parse does not mutate the cache. Exchange-time credential rotation
     is rejected before writing the token. Future production support needs
     separately verified quote/source/status/expiry semantics.
@@ -179,8 +187,13 @@ def save_example_token_response(
         if kis_expiry_timezone is not None:
             raise TokenError(TokenFailure.INVALID_RESPONSE)
         expiry_timezone = KST  # Explicitly assigned in the pinned Kiwoom auth source.
+    attestation = _token_send_attestation(response)
+    if attestation is None:
+        raise TokenError(TokenFailure.UNATTESTED)
     if lifetime_s is not None:
-        expires_at_ms = now_ms + lifetime_s * 1000
+        # Counted from just before the write: the server cannot have issued
+        # the token earlier, so this never overstates the remaining lifetime.
+        expires_at_ms = attestation.send_start_ms + lifetime_s * 1000
     else:
         try:
             expires_at_ms = int(expires.replace(tzinfo=expiry_timezone).timestamp() * 1000)
@@ -197,5 +210,16 @@ def save_example_token_response(
         stale = False
     if stale:
         raise TokenError(TokenFailure.STALE_CREDENTIAL)
-    return cache.put(provider, snap, access_token=access, expires_at_ms=expires_at_ms,
-                     now_ms=now_ms)
+    try:
+        lease = cache.put(provider, snap, access_token=access, expires_at_ms=expires_at_ms,
+                          now_ms=now_ms, issue_sequence=attestation.sequence)
+        refused = None
+    except CredentialError as error:
+        refused = error.kind
+    if refused is CredentialFailure.SUPERSEDED:
+        raise TokenError(TokenFailure.SUPERSEDED)
+    if refused is CredentialFailure.STALE:
+        raise TokenError(TokenFailure.STALE_CREDENTIAL)
+    if refused is not None:
+        raise TokenError(TokenFailure.INVALID_RESPONSE)
+    return lease

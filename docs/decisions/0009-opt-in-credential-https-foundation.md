@@ -42,8 +42,9 @@ the assistant to access accounts, fetch tokens or make any real network request.
   including the exact credential snapshot and bearer lease. Host/framing header
   overrides and altered quote symbols in request bodies are rejected.
   Credential and token revocation/rotation/expiry are rechecked before connecting
-  and again after TLS, before the HTTP write. This is not atomic coordination
-  with other threads/processes; concurrent use requires a separate design.
+  and again after TLS, before the HTTP write. In-process thread safety,
+  single-flight token sends and send ordering are added by ADR 0011. Nothing
+  coordinates across processes.
   Exact 200 is the only provisional success status; all other status families
   fail with static classification. One network attempt at most; response bodies
   are bounded at 1,048,576 bytes and treated as **untrusted**. A body that

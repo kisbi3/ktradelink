@@ -52,19 +52,19 @@ for the token endpoint. The retrieved copies are identified by hash in
      names at once, or neither, fails closed. The value must be between 1 s
      and a library sanity bound of 7 days. Which form the gateway really sends
      is unverified.
-   - The lease expires that many seconds after the caller's `now_ms`. Callers
-     should pass the time before sending, so the round trip is not counted as
-     lifetime.
+   - The lease expires that many seconds after the transport's own clock
+     reading taken just before the token request write (ADR 0011). The
+     caller's `now_ms` no longer sets the start.
 
 ## Consequences and limits
 
 - These are publisher documentation and samples, not gateway verification.
   Live acceptance, the `rsp_cd` universe, rate limits (the guide lists
   10 TPS for t1102) and the meaning of zero OHLC values remain unverified.
-- Gate before any real token issuance: the relative lifetime is counted from
-  the caller's `now_ms`, not from a send-start time captured by the
-  transport. A trustworthy send-start timestamp must exist first, so the
-  lifetime cannot be extended artificially.
+- The earlier gate before real token issuance is closed by ADR 0011. It
+  required that the relative lifetime not be counted from the caller's
+  `now_ms`. Now the transport attests the send-start time, and only
+  transport-received responses are cached.
 - No public `fetch_ticker`. Network stays disabled by default. No credential,
   token, quote, account or order request was made to LS.
 - DB, Toss and Meritz remain blocked for real `WireRequest`s. The gates for

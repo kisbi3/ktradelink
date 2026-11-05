@@ -158,13 +158,14 @@ WITHOUT_LIFETIME = {k: v for k, v in GOOD.items() if k != "expires_in"}
 # example (`expires_in` JSON number) and the field table (`expire_in`, String,
 # length 10).
 @pytest.mark.parametrize("field,value", [("expires_in", 86400), ("expire_in", "86400")])
-def test_either_documented_lifetime_form_yields_a_relative_lease(field, value):
+def test_either_documented_lifetime_form_yields_a_relative_lease(
+        field, value, receive_token_response):
     identity, provider = _setup()
     payload = WITHOUT_LIFETIME | {field: value}
     cache = InMemoryTokenCache()
-    lease = save_example_token_response(
-        _token_response(identity, provider, payload), identity, provider, cache, now_ms=5_000,
-    )
+    response = receive_token_response(build_token_request(identity, provider),
+                                      json.dumps(payload).encode(), clock=(4_000, 5_000))
+    lease = save_example_token_response(response, identity, provider, cache, now_ms=5_000)
     assert lease.expires_at_ms == 5_000 + 86_400_000
     assert cache.get(provider, identity, now_ms=5_000) is lease
     assert "SYNTHETIC_TOKEN" not in repr(lease)

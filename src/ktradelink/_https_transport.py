@@ -7,9 +7,12 @@ proxies, retries, account calls or orders. Not a public fetch_ticker adapter.
 """
 
 import http.client
+import itertools
 import json
 import ssl
+import threading
 import time
+import weakref
 from dataclasses import dataclass, field
 from enum import Enum
 from urllib.parse import urlencode, urlsplit
@@ -44,6 +47,7 @@ class TransportFailure(Enum):
     NOT_ENABLED = "real_network_disabled"
     STALE_CREDENTIAL = "credential_changed_before_send"
     TOKEN_UNAVAILABLE = "token_invalid_before_send"
+    TOKEN_IN_FLIGHT = "token_exchange_already_in_flight"
     EVIDENCE_MISSING = "broker_wire_contract_not_verified"
     CONNECT = "https_connect_failed"
     TLS = "tls_handshake_failed"
@@ -230,9 +234,14 @@ class WireRequest:
             _reject(TransportFailure.INVALID_REQUEST)
 
 
-@dataclass(frozen=True, slots=True, repr=False)
+@dataclass(frozen=True, slots=True, repr=False, eq=False, weakref_slot=True)
 class WireResponse:
-    """Untrusted HTTP bytes, not authenticated quote/exchange provenance."""
+    """Untrusted HTTP bytes, not authenticated quote/exchange provenance.
+
+    Identity-compared on purpose: a response received by ``HttpsTransport``
+    is attested by object identity (see ``_token_send_attestation``), so an
+    equal-looking object built elsewhere never inherits that attestation.
+    """
 
     request: WireRequest = field(repr=False, compare=False)
     status: int
@@ -323,6 +332,34 @@ def _http_kind(status: int) -> TransportFailure | None:
     return TransportFailure.HTTP
 
 
+@dataclass(frozen=True, slots=True)
+class _TokenSendAttestation:
+    """What the transport itself observed about one token send."""
+
+    sequence: int  # process-wide order in which token sends started
+    send_start_ms: int  # real clock read after TLS, immediately before the write
+
+
+_TOKEN_STATE_LOCK = threading.Lock()
+_TOKEN_SEQUENCE = itertools.count(1)
+_TOKENS_IN_FLIGHT: set[tuple[int, CredentialIdentity]] = set()
+_TOKEN_ATTESTATIONS: "weakref.WeakKeyDictionary[WireResponse, _TokenSendAttestation]" = (
+    weakref.WeakKeyDictionary()
+)
+
+
+def _token_send_attestation(response: object) -> _TokenSendAttestation | None:
+    """The transport's record for a token response it received, else None.
+
+    A ``WireResponse`` built anywhere else, including a field-for-field copy,
+    has no record.
+    """
+    if type(response) is not WireResponse:
+        return None
+    with _TOKEN_STATE_LOCK:
+        return _TOKEN_ATTESTATIONS.get(response)
+
+
 def _wall_clock_ms() -> int:
     """The only send-time clock. Tests may monkeypatch this module function;
     there is deliberately no constructor or per-call clock parameter, so a
@@ -357,6 +394,11 @@ class HttpsTransport:
     Token expiry is always checked against the real UTC clock, read before
     connecting and again after the TLS handshake. No caller-supplied clock is
     accepted (follow-up to the ChatGPT review of PR #24).
+
+    At most one token request per provider and credential identity is in
+    flight in this process; a second concurrent one fails ``TOKEN_IN_FLIGHT``
+    before connecting. A received token response is attested with its send
+    order and the clock reading taken just before the write.
     """
 
     __slots__ = ("_enabled", "_timeout_ms")
@@ -400,9 +442,23 @@ class HttpsTransport:
         if request.query:
             target += "?" + urlencode(request.query)
 
+        flight_key = None
+        sequence = None
+        if request.purpose == "token":
+            snapshot = request.credential_snapshot
+            key = (id(snapshot.owner), snapshot.identity)
+            with _TOKEN_STATE_LOCK:
+                if key not in _TOKENS_IN_FLIGHT:
+                    _TOKENS_IN_FLIGHT.add(key)
+                    flight_key = key
+                    sequence = next(_TOKEN_SEQUENCE)
+            if flight_key is None:
+                _reject(TransportFailure.TOKEN_IN_FLIGHT)
+
         conn = None
         response_status: int | None = None
         response_body: bytes | None = None
+        before_write_ms: int | None = None
         failure: TransportFailure | None = None
         state = DeliveryState.NOT_SENT
         try:
@@ -479,10 +535,18 @@ class HttpsTransport:
                 except Exception:
                     # close failure must never disguise the original send outcome
                     pass
+            if flight_key is not None:
+                with _TOKEN_STATE_LOCK:
+                    _TOKENS_IN_FLIGHT.discard(flight_key)
 
         # Outside except handlers: prevent original URL/header/payload exceptions
         # from being retained by the public error via __context__.
         if failure is not None:
             raise TransportError(failure, state)
         assert response_status is not None and response_body is not None
-        return WireResponse(request, response_status, response_body)
+        received = WireResponse(request, response_status, response_body)
+        if sequence is not None:
+            assert before_write_ms is not None
+            with _TOKEN_STATE_LOCK:
+                _TOKEN_ATTESTATIONS[received] = _TokenSendAttestation(sequence, before_write_ms)
+        return received
