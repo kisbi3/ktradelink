@@ -17,6 +17,7 @@ def _fresh_process_token_registries(monkeypatch):
     """
     monkeypatch.setattr("ktradelink._token_codec._DB_ISSUED", {})
     monkeypatch.setattr("ktradelink._https_transport._TOSS_TOKEN_WRITES", {})
+    monkeypatch.setattr("ktradelink._https_transport._TOSS_QUOTE_WRITES", {})
 
 
 @pytest.fixture

@@ -491,3 +491,101 @@ def test_token_then_quote_end_to_end_through_the_existing_decoder(
     assert (ticker.symbol, ticker.venue, ticker.broker) == ("005930", "KRX", "toss")
     assert str(ticker.last) == "72000"
     assert ticker.volume is None and ticker.open is None  # PriceResponse has neither
+
+
+# --- ChatGPT review of PR #30, M1: latest-token check and quote write -------
+
+def _answering(status, body):
+    conn = MagicMock()
+    conn.getresponse.return_value.status = status
+    conn.getresponse.return_value.read.return_value = body
+    conn.getresponse.return_value.length = None
+    return conn
+
+
+def _two_profiles(receive):
+    provider = InMemoryCredentialProvider()
+    first, _ = _setup("first", provider=provider)
+    second, _ = _setup("second", provider=provider)  # same Toss client id
+    cache = InMemoryTokenCache()
+    _issue(receive, first, provider, cache, 1)
+    quote = build_quote_request(_plan(), first, provider, cache, now_ms=1_000)
+    return provider, second, quote
+
+
+def test_a_token_write_after_the_final_check_still_blocks_the_quote_write(
+        receive_token_response, monkeypatch):
+    """Reviewer's interleaving: the quote's final latest-token check passes,
+    then another provider's token send for the same client writes before the
+    quote writes. The quote must not be written with the retired token."""
+    provider, second, quote = _two_profiles(receive_token_response)
+    quote_conn = _answering(200, _body(PRICES_EXAMPLE))
+    token_conn = _answering(200, _token(2))
+    monkeypatch.setattr(http.client, "HTTPSConnection",
+                        MagicMock(side_effect=[quote_conn, token_conn]))
+    monkeypatch.setattr("ktradelink._https_transport._wall_clock_ms", lambda: 2_000)
+    real = _https_transport._binding_failure
+    calls = []
+
+    def check_then_interleave(request, now_ms):
+        result = real(request, now_ms)
+        calls.append(request.purpose)
+        if request.purpose == "quote" and calls.count("quote") == 2:
+            HttpsTransport(network_enabled=True).send(build_token_request(second, provider))
+        return result
+
+    monkeypatch.setattr(_https_transport, "_binding_failure", check_then_interleave)
+    with pytest.raises(TransportError) as caught:
+        HttpsTransport(network_enabled=True).send(quote)
+    assert caught.value.kind is TransportFailure.TOKEN_UNAVAILABLE
+    assert caught.value.delivery is DeliveryState.NOT_SENT
+    assert token_conn.request.call_count == 1
+    quote_conn.request.assert_not_called()
+    assert _https_transport._TOSS_QUOTE_WRITES == {}
+
+
+def test_a_token_send_during_a_quote_write_is_refused_before_writing(
+        receive_token_response, monkeypatch):
+    provider, second, quote = _two_profiles(receive_token_response)
+    quote_conn = _answering(200, _body(PRICES_EXAMPLE))
+    token_conn = _answering(200, _token(2))
+    monkeypatch.setattr(http.client, "HTTPSConnection",
+                        MagicMock(side_effect=[quote_conn, token_conn]))
+    monkeypatch.setattr("ktradelink._https_transport._wall_clock_ms", lambda: 2_000)
+    refused = []
+
+    def quote_write(*_args, **_kwargs):
+        try:
+            HttpsTransport(network_enabled=True).send(build_token_request(second, provider))
+        except TransportError as error:
+            refused.append(error)
+
+    quote_conn.request.side_effect = quote_write
+    response = HttpsTransport(network_enabled=True).send(quote)
+    assert response.status == 200
+    assert len(refused) == 1
+    assert refused[0].kind is TransportFailure.QUOTE_IN_FLIGHT
+    assert refused[0].delivery is DeliveryState.NOT_SENT
+    token_conn.request.assert_not_called()
+    assert _https_transport._TOSS_QUOTE_WRITES == {}
+    # The quote's token is still the latest: the refused send retired nothing.
+    client = _https_transport._toss_client(provider.load(second).pair)
+    assert _https_transport._TOSS_TOKEN_WRITES[client] == quote.bearer_lease.issue_sequence
+
+
+def test_a_failed_quote_write_releases_its_claim(receive_token_response, monkeypatch):
+    provider, second, quote = _two_profiles(receive_token_response)
+    quote_conn = _answering(200, b"")
+    quote_conn.request.side_effect = OSError("synthetic write failure")
+    token_conn = _answering(200, _token(2))
+    monkeypatch.setattr(http.client, "HTTPSConnection",
+                        MagicMock(side_effect=[quote_conn, token_conn]))
+    monkeypatch.setattr("ktradelink._https_transport._wall_clock_ms", lambda: 2_000)
+    with pytest.raises(TransportError) as caught:
+        HttpsTransport(network_enabled=True).send(quote)
+    assert caught.value.kind is TransportFailure.WRITE
+    assert caught.value.delivery is DeliveryState.UNKNOWN
+    assert _https_transport._TOSS_QUOTE_WRITES == {}
+    # A later token send is no longer blocked.
+    response = HttpsTransport(network_enabled=True).send(build_token_request(second, provider))
+    assert response.status == 200 and token_conn.request.call_count == 1

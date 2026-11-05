@@ -118,6 +118,16 @@ responses were not copied. Page hashes identify only the copy retrieved.
      connecting and again after TLS, before the write. Otherwise
      `TOKEN_UNAVAILABLE`. A lease put into the cache by hand has no send
      sequence, so it can never be used for Toss.
+   - **No quote write after a newer token write:** the final latest-send
+     check and the claim of the quote write happen in one critical section
+     of the process-wide token lock. While a Toss quote for a client is being
+     written, a Toss token send for that client fails `QUOTE_IN_FLIGHT`
+     before it writes anything (`NOT_SENT`); the claim is released when the
+     quote write returns or fails. So no Toss quote starts writing after a
+     newer token write started, in this process. No network I/O happens
+     under the lock, nothing waits and nothing is retried (ChatGPT review of
+     PR #30, M1). How Toss orders two requests that are both in flight is
+     not documented.
    - **Saving:** a response from an older send cannot be saved
      (`TokenFailure.SUPERSEDED`).
    - **Not covered:** a refusal of a second provider or profile for the same
@@ -170,8 +180,9 @@ responses were not copied. Page hashes identify only the copy retrieved.
     (`StatusSpec` optional; the Rust test `{"Out":{"Prpr":"10"}}` decodes).
     The PRICE response example always carries `rsp_cd: "00000"`, and
     AGENTS.md forbids default success for a missing upstream status. The
-    LS decoder already requires its `rsp_cd` (ADR 0010). Recommended: make
-    DB's `rsp_cd` required.
+    LS decoder already requires its `rsp_cd` (ADR 0010). Making DB's
+    `rsp_cd` required is a **blocking gate before any public DB quote**
+    (ChatGPT review of PR #30, L1); it is tracked as its own follow-up.
   - The DB decoder does not map the documented `AcmlVol` (volume). That is
     not a safety issue.
   - The Toss decoder does not reject a root `error` next to `result`. The

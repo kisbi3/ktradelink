@@ -52,6 +52,7 @@ class TransportFailure(Enum):
     STALE_CREDENTIAL = "credential_changed_before_send"
     TOKEN_UNAVAILABLE = "token_invalid_before_send"
     TOKEN_IN_FLIGHT = "token_exchange_already_in_flight"
+    QUOTE_IN_FLIGHT = "toss_quote_write_in_flight"
     EVIDENCE_MISSING = "broker_wire_contract_not_verified"
     CONNECT = "https_connect_failed"
     TLS = "tls_handshake_failed"
@@ -148,6 +149,11 @@ def _token_wire(
 # lease from that send can be used for a Toss quote (ADR 0015). Another
 # process using the same client is NOT visible.
 _TOSS_TOKEN_WRITES: dict[bytes, int] = {}
+# Toss quote writes in progress per client id digest. A quote claims its slot
+# in the same critical section as its final latest-token check, and a Toss
+# token send may not start writing while any slot is held, so no quote write
+# can begin after a newer token write began (ChatGPT review of PR #30, M1).
+_TOSS_QUOTE_WRITES: dict[bytes, int] = {}
 
 
 def _toss_client(pair: CredentialPair) -> bytes:
@@ -162,6 +168,28 @@ def _toss_token_write_is_latest(pair: CredentialPair, sequence: object) -> bool:
         return False
     with _TOKEN_STATE_LOCK:
         return _TOSS_TOKEN_WRITES.get(_toss_client(pair)) == sequence
+
+
+def _claim_toss_quote_write(client: bytes, sequence: object) -> bool:
+    """Atomically re-check that ``sequence`` is still the latest Toss token send
+    and register a quote write for ``client``. Release with
+    ``_release_toss_quote_write``. No I/O happens under the lock."""
+    if type(sequence) is not int:
+        return False
+    with _TOKEN_STATE_LOCK:
+        if _TOSS_TOKEN_WRITES.get(client) != sequence:
+            return False
+        _TOSS_QUOTE_WRITES[client] = _TOSS_QUOTE_WRITES.get(client, 0) + 1
+        return True
+
+
+def _release_toss_quote_write(client: bytes) -> None:
+    with _TOKEN_STATE_LOCK:
+        remaining = _TOSS_QUOTE_WRITES.get(client, 0) - 1
+        if remaining > 0:
+            _TOSS_QUOTE_WRITES[client] = remaining
+        else:
+            _TOSS_QUOTE_WRITES.pop(client, None)
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -488,7 +516,11 @@ class HttpsTransport:
     connecting. A received token response is attested with its send order
     and the clock reading taken just before the write. A Toss token send that
     starts writing retires every earlier Toss lease for that client in this
-    process, even if the send then fails (ADR 0015).
+    process, even if the send then fails (ADR 0015). The final latest-token
+    check of a Toss quote and the claim of its write are one atomic step, and
+    a Toss token send fails ``QUOTE_IN_FLIGHT`` (nothing written) while a
+    Toss quote for the same client is being written, so no quote write starts
+    after a newer token write started. Nothing waits or retries.
 
     With ``collect_diagnostics=True`` (default off), an HTTP error response
     body is read within the usual bound only to extract a redacted status
@@ -541,6 +573,10 @@ class HttpsTransport:
         flight_key = None
         sequence = None
         toss_client = None
+        quote_claimed = False
+        toss_quote_client = None
+        if request.purpose == "quote" and request.source.broker == "toss":
+            toss_quote_client = _toss_client(request.credential_snapshot.pair)
         if request.purpose == "token":
             snapshot = request.credential_snapshot
             if request.source.broker == "toss":
@@ -592,13 +628,23 @@ class HttpsTransport:
                     failure = TransportFailure.INVALID_REQUEST
                 else:
                     failure = _binding_failure(request, before_write_ms)
+            if failure is None and toss_client is not None:
+                # From here Toss may issue a new token and invalidate the
+                # previous one, whatever this send's outcome turns out to be.
+                # Never start while a quote with the current token is writing.
+                with _TOKEN_STATE_LOCK:
+                    if _TOSS_QUOTE_WRITES.get(toss_client, 0) > 0:
+                        failure = TransportFailure.QUOTE_IN_FLIGHT
+                    else:
+                        _TOSS_TOKEN_WRITES[toss_client] = sequence
+            if failure is None and toss_quote_client is not None:
+                if _claim_toss_quote_write(toss_quote_client,
+                                           request.bearer_lease.issue_sequence):
+                    quote_claimed = True
+                else:
+                    failure = TransportFailure.TOKEN_UNAVAILABLE
             if failure is None:
                 state = DeliveryState.UNKNOWN  # any write failure may be partial
-                if toss_client is not None:
-                    # From here Toss may issue a new token and invalidate the
-                    # previous one, whatever this send's outcome turns out to be.
-                    with _TOKEN_STATE_LOCK:
-                        _TOSS_TOKEN_WRITES[toss_client] = sequence
                 try:
                     conn.request(
                         request.method, target, body=request.body,
@@ -606,6 +652,10 @@ class HttpsTransport:
                     )
                 except Exception:
                     failure = TransportFailure.WRITE
+                finally:
+                    if quote_claimed:
+                        quote_claimed = False
+                        _release_toss_quote_write(toss_quote_client)
 
             if failure is None:
                 try:
@@ -640,6 +690,8 @@ class HttpsTransport:
                 except Exception:
                     failure = TransportFailure.READ
         finally:
+            if quote_claimed:
+                _release_toss_quote_write(toss_quote_client)
             if conn is not None:
                 try:
                     conn.close()
