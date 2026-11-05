@@ -12,6 +12,7 @@ live-tested.
 - [Six-broker offline ticker evidence ledger](six-broker-ticker-decoders.md)
 - [Six-broker quote request and authentication evidence](six-broker-quote-request-auth.md)
 - [Six-broker candle (minute/day/week/month/year) evidence, 2026-11-05](candle-evidence-2026-11-05.md)
+- [Six-broker market-operations (tick size, price limits, sessions, holidays, status) evidence, 2026-11-05](market-operations-evidence-2026-11-05.md)
 - [Private offline request planner usage](../usage/offline-six-broker-request-plans.md)
 
 The next step is to verify exact response schema/field-level semantics with
