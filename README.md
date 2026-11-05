@@ -58,8 +58,9 @@ any securities broker. Production and live-account use is **not supported**.
 
 ## Collaboration
 
-GitHub is the source of truth. ChatGPT Chat prepares implementations and pull
-requests; Gemini Web is used for an independent review. The human maintainer
+GitHub is the source of truth. ChatGPT and Claude Code implement changes on
+separate topic branches and independently review each other's pull requests
+at a fixed commit SHA; Gemini Web review is paused. The human maintainer
 approves merges. See [AGENTS.md](AGENTS.md) and
 [CONTRIBUTING.md](CONTRIBUTING.md).
 
