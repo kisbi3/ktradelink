@@ -113,23 +113,32 @@ def _token_wire(
         return body, (("content-type", "application/json;charset=UTF-8"),)
     if (auth.broker in ("ls", "db") and auth.token_request_format == "form"
             and auth.scope == "oob"):
-        body = urlencode((
+        fields = (
             ("grant_type", "client_credentials"),
             (key_name, pair.client_key),
             (secret_name, pair.client_secret),
             ("scope", auth.scope),
-        )).encode("ascii")
-        return body, (("content-type", "application/x-www-form-urlencoded"),)
-    if (auth.broker == "toss" and auth.token_request_format == "form" and auth.scope is None
+        )
+    elif (auth.broker == "toss" and auth.token_request_format == "form" and auth.scope is None
             and (key_name, secret_name) == ("client_id", "client_secret")):
         # OpenAPI 1.2.28 OAuth2TokenRequest: exactly these three form fields.
-        body = urlencode((
+        fields = (
             ("grant_type", "client_credentials"),
             (key_name, pair.client_key),
             (secret_name, pair.client_secret),
-        )).encode("ascii")
-        return body, (("content-type", "application/x-www-form-urlencoded"),)
-    _reject(TransportFailure.EVIDENCE_MISSING)
+        )
+    else:
+        _reject(TransportFailure.EVIDENCE_MISSING)
+    # A lone surrogate cannot be UTF-8 percent-encoded. The UnicodeEncodeError
+    # would carry the whole secret in ``.object``, so it is replaced by a
+    # static error raised outside the handler (no __context__ chain).
+    try:
+        body = urlencode(fields).encode("ascii")
+    except UnicodeError:
+        body = None
+    if body is None:
+        _reject(TransportFailure.INVALID_REQUEST)
+    return body, (("content-type", "application/x-www-form-urlencoded"),)
 
 
 # Toss keeps ONE valid token per client: issuing a new one invalidates the
@@ -143,7 +152,8 @@ _TOSS_TOKEN_WRITES: dict[bytes, int] = {}
 
 def _toss_client(pair: CredentialPair) -> bytes:
     """Digest of the Toss client id; the id itself is never kept here."""
-    return hashlib.sha256(pair.client_key.encode("utf-8")).digest()
+    # surrogatepass: never raises, so the id cannot leak through an exception.
+    return hashlib.sha256(pair.client_key.encode("utf-8", "surrogatepass")).digest()
 
 
 def _toss_token_write_is_latest(pair: CredentialPair, sequence: object) -> bool:

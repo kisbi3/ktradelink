@@ -67,7 +67,7 @@ _DB_ISSUED: dict[bytes, tuple[int, int]] = {}  # digest -> (send sequence, expir
 
 
 def _db_reissued(access: str, sequence: int, send_start_ms: int, expires_at_ms: int) -> bool:
-    digest = hashlib.sha256(access.encode("utf-8")).digest()
+    digest = hashlib.sha256(access.encode("utf-8", "surrogatepass")).digest()
     with _DB_ISSUE_LOCK:
         for key in [k for k, (_, exp) in _DB_ISSUED.items() if exp <= send_start_ms]:
             del _DB_ISSUED[key]
@@ -76,6 +76,15 @@ def _db_reissued(access: str, sequence: int, send_start_ms: int, expires_at_ms: 
             return seen[0] != sequence
         _DB_ISSUED[digest] = (sequence, expires_at_ms)
         return False
+
+
+def _header_safe_token(value: object) -> str:
+    """Printable ASCII without spaces: a JSON ``\\ud800`` escape or other text
+    that cannot go into a Bearer header (RFC 6750 b64token) fails closed."""
+    if (type(value) is not str or not value.isascii() or not value.isprintable()
+            or " " in value):
+        raise ValueError("invalid token characters")
+    return value
 
 
 def _json_int_seconds(value: object, maximum: int) -> int:
@@ -222,12 +231,12 @@ def save_example_token_response(
                 raise ValueError("undocumented DB token response shape")
             if type(payload["scope"]) is not str or payload["scope"] not in _DB_TOKEN_SCOPES:
                 raise ValueError("unexpected token scope")
-            access = payload["access_token"]
+            access = _header_safe_token(payload["access_token"])
             lifetime_s = _json_int_seconds(payload["expires_in"], DB_MAX_LIFETIME_S)
         elif identity.broker == "toss":
             if set(payload) != _TOSS_TOKEN_KEYS or kind != "Bearer":
                 raise ValueError("undocumented Toss token response shape")
-            access = payload["access_token"]
+            access = _header_safe_token(payload["access_token"])
             lifetime_s = _json_int_seconds(payload["expires_in"], MAX_RELATIVE_LIFETIME_S)
         elif identity.broker == "kis":
             access = payload["access_token"]
