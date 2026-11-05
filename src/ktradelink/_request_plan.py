@@ -84,16 +84,35 @@ def _origin(broker: str, environment: str) -> str:
     raise QuotePlanUnavailable("Unsupported or undocumented broker environment")
 
 
+_DIGITS = frozenset("0123456789")
+_SYMBOL_CHARS = _DIGITS | frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+
+# ADR 0016: brokers whose publisher evidence shows six-character alphanumeric
+# short codes (docs/brokers/symbol-master-evidence-2026-11-05.md section 8.3):
+# KIS and Meritz master-file observation, a DB JCODES example, Toss's
+# documented KrSymbol. Kiwoom and LS documents neither show nor exclude them,
+# so they stay digit-only. None of this is gateway-verified.
+_ALPHANUMERIC_SYMBOL_BROKERS = frozenset({"kis", "db", "toss", "meritz"})
+
+
+def _is_public_symbol(symbol: object) -> bool:
+    """ADR 0016 public KR equity grammar: exactly six ASCII ``[0-9A-Z]``.
+
+    No case folding, trimming or prefix/suffix stripping.
+    """
+    return (type(symbol) is str and len(symbol) == 6
+            and all(char in _SYMBOL_CHARS for char in symbol))
+
+
+def _symbol_evidenced_for(broker: str, symbol: str) -> bool:
+    """Whether ``broker``'s requests may carry a public-grammar ``symbol``."""
+    return all(char in _DIGITS for char in symbol) or broker in _ALPHANUMERIC_SYMBOL_BROKERS
+
+
 def _checked_symbol(broker: str, symbol: str) -> str:
-    if type(symbol) is not str or len(symbol) != 6 or not symbol.isascii():
-        raise QuotePlanUnavailable("Symbol format not established for this route")
-    # The official Toss KR symbol schema includes alphanumeric six-character
-    # identifiers. Other current quote request examples show six digits only.
-    # Do not confuse public Ticker identifiers with broker request formats.
-    if broker == "toss":
-        if not symbol.isalnum():
-            raise QuotePlanUnavailable("Symbol format not established for this route")
-    elif not symbol.isdecimal():
+    # Public grammar first, then the per-broker request rule (ADR 0016). Do
+    # not confuse public Ticker identifiers with broker request formats.
+    if not _is_public_symbol(symbol) or not _symbol_evidenced_for(broker, symbol):
         raise QuotePlanUnavailable("Symbol format not established for this route")
     return symbol
 

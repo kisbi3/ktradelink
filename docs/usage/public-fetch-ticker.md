@@ -49,8 +49,13 @@ with client:
   `datetime.timezone` you have confirmed yourself, for example
   `kis_expiry_timezone=timezone(timedelta(hours=9))` if you have established
   that KIS uses KST. The library will not guess.
-- **Symbol and venue:** six ASCII digits only, `venue="KRX"` only. `NXT` and
-  `BROKER_COMPOSITE` are unsupported; there is no fallback to KRX.
+- **Symbol and venue:** six ASCII characters in `[0-9A-Z]` (ADR 0016),
+  `venue="KRX"` only. Lowercase, whitespace and native forms such as
+  `A005930` or `005930_NX` raise `InvalidSymbol`; nothing is folded or
+  stripped. A symbol with a letter (e.g. `0000D0`) is accepted for KIS but
+  raises `UnsupportedCapability` for Kiwoom and LS, whose documents do not
+  show such codes. Whether KIS's quote route accepts one is not verified.
+  `NXT` and `BROKER_COMPOSITE` are unsupported; there is no fallback to KRX.
 - **`params`:** must be `None` or empty for now. Unknown options are errors.
 - **Result:** the same `ktradelink.models.Ticker` the decoders produce.
   `timestamp` and `retrieved_at` are `None`. LS fills only `last` and

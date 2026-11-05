@@ -166,12 +166,52 @@ def test_bad_or_injected_symbol_rejected_without_reflection(
     assert "token=abc" not in str(exc.value)
 
 
-@pytest.mark.parametrize("broker", ["kis", "kiwoom", "ls", "db", "meritz"])
-def test_only_toss_candidate_accepts_alphanumeric_kr_stock_symbol(broker: str) -> None:
-    with pytest.raises(QuotePlanUnavailable):
-        plan_ticker_request(broker, "0101N0", venue="KRX", environment="live")
-    toss = plan_ticker_request("toss", "0101N0", venue="KRX", environment="live")
-    assert toss.query == (("symbols", "0101N0"),)
+@pytest.mark.parametrize("broker", ["kiwoom", "ls"])
+@pytest.mark.parametrize("symbol", ["0000D0", "0101N0", "00593A", "ABCDEF"])
+def test_alphanumeric_symbol_is_not_planned_without_broker_evidence(
+    broker: str, symbol: str
+) -> None:
+    # ADR 0016: Kiwoom and LS documents neither show nor exclude such codes.
+    with pytest.raises(QuotePlanUnavailable, match="Symbol"):
+        plan_ticker_request(broker, symbol, venue="KRX", environment="live")
+
+
+ALPHANUMERIC_SYMBOL_IN_REQUEST = {
+    "kis": lambda plan: plan.query == (("fid_cond_mrkt_div_code", "J"),
+                                       ("fid_input_iscd", plan.symbol)),
+    "db": lambda plan: json.loads(plan.json_body) == {
+        "In": {"InputCondMrktDivCode": "J", "InputIscd1": plan.symbol}},
+    "toss": lambda plan: plan.query == (("symbols", plan.symbol),),
+    "meritz": lambda plan: plan.query == (("mrkt_div_code", "J"), ("iscd", plan.symbol)),
+}
+
+
+@pytest.mark.parametrize("broker", sorted(ALPHANUMERIC_SYMBOL_IN_REQUEST))
+@pytest.mark.parametrize("symbol", ["0000D0", "0101N0", "005930"])
+def test_alphanumeric_symbol_is_planned_verbatim_where_evidenced(
+    broker: str, symbol: str
+) -> None:
+    # ADR 0016: KIS/Meritz master observation, DB example, Toss documented.
+    # Gateway acceptance of an alphanumeric code is NOT verified.
+    plan = plan_ticker_request(broker, symbol, venue="KRX", environment="live")
+    assert plan.symbol == symbol
+    assert ALPHANUMERIC_SYMBOL_IN_REQUEST[broker](plan)
+
+
+@pytest.mark.parametrize("broker", BROKERS)
+@pytest.mark.parametrize(
+    "symbol",
+    ["0000d0", "0101n0", "A005930", "Q500001", "J005930", "005930_NX", "005930_AL",
+     "N-005930", "U-005930", "0000D", "0000D00", "0000Ｄ0", "00593é", " 0000D0",
+     "0000D0 ", "0000 D"],
+)
+def test_public_symbol_grammar_is_enforced_for_every_broker(
+    broker: str, symbol: str
+) -> None:
+    # No case folding, trimming or prefix/suffix stripping, even for Toss whose
+    # request pattern admits lower case (ADR 0016).
+    with pytest.raises(QuotePlanUnavailable, match="Symbol"):
+        plan_ticker_request(broker, symbol, venue="KRX", environment="live")
 
 
 @pytest.mark.parametrize("broker", BROKERS)
