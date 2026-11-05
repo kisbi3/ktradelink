@@ -10,7 +10,6 @@ import http.client
 import json
 import ssl
 import time
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from urllib.parse import urlencode, urlsplit
@@ -311,6 +310,9 @@ def _http_kind(status: int) -> TransportFailure | None:
 
 
 def _wall_clock_ms() -> int:
+    """The only send-time clock. Tests may monkeypatch this module function;
+    there is deliberately no constructor or per-call clock parameter, so a
+    network-enabled sender cannot be handed a frozen or rolled-back time."""
     return time.time_ns() // 1_000_000
 
 
@@ -338,28 +340,24 @@ class HttpsTransport:
     credentials, follow redirects, keep a cookie jar or reuse connections.
     Never call with real keys without the maintainer's separate live approval.
 
-    ``clock`` (epoch milliseconds) is a construction-time test seam; it is read
-    again after the TLS handshake, so an advancing clock still detects expiry
-    during a slow handshake. There is deliberately no per-call clock override.
+    Token expiry is always checked against the real UTC clock, read before
+    connecting and again after the TLS handshake. No caller-supplied clock is
+    accepted (follow-up to the ChatGPT review of PR #24).
     """
 
-    __slots__ = ("_clock", "_enabled", "_timeout_ms")
+    __slots__ = ("_enabled", "_timeout_ms")
 
-    def __init__(
-        self, *, network_enabled: bool = False, timeout_ms: int = 5_000,
-        clock: Callable[[], int] | None = None,
-    ):
+    def __init__(self, *, network_enabled: bool = False, timeout_ms: int = 5_000):
         if (type(network_enabled) is not bool or type(timeout_ms) is not int
-                or not 1 <= timeout_ms <= 60_000
-                or (clock is not None and not callable(clock))):
+                or not 1 <= timeout_ms <= 60_000):
             _reject(TransportFailure.INVALID_REQUEST)
         self._enabled = network_enabled
         self._timeout_ms = timeout_ms
-        self._clock = _wall_clock_ms if clock is None else clock
 
-    def _now_ms(self) -> int | None:
+    @staticmethod
+    def _now_ms() -> int | None:
         try:
-            value = self._clock()
+            value = _wall_clock_ms()  # looked up at call time
         except Exception:
             return None
         if type(value) is not int or value < 0:
