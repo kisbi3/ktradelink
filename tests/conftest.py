@@ -8,6 +8,18 @@ import pytest
 from ktradelink._https_transport import HttpsTransport
 
 
+@pytest.fixture(autouse=True)
+def _fresh_process_token_registries(monkeypatch):
+    """Each test starts with empty process-wide token registries.
+
+    Tests reuse synthetic token strings and clock readings, so a registry
+    entry from one test must not leak into another.
+    """
+    monkeypatch.setattr("ktradelink._token_codec._DB_ISSUED", {})
+    monkeypatch.setattr("ktradelink._https_transport._TOSS_TOKEN_WRITES", {})
+    monkeypatch.setattr("ktradelink._https_transport._TOSS_QUOTE_WRITES", {})
+
+
 @pytest.fixture
 def receive_token_response(monkeypatch):
     """Return ``receive(request, body, clock=(pre_connect_ms, before_write_ms))``.

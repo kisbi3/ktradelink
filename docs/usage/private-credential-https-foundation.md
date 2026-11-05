@@ -1,8 +1,8 @@
 # Private credential and HTTPS foundation (not a live broker client)
 
 This is an **implementation candidate for Issue #17**. Python can hold explicitly
-supplied credentials and bearer tokens, construct evidence-scoped KIS/Kiwoom/LS
-example requests and implement a TLS-verified HTTPS send. **Nothing here is a
+supplied credentials and bearer tokens, construct evidence-scoped
+KIS/Kiwoom/LS/DB/Toss example requests and implement a TLS-verified HTTPS send. **Nothing here is a
 functional or verified public `fetch_ticker` API**. No actual service is
 contacted by importing the package or running its CI. The experimental public
 entry point that composes these pieces, still unverified against any gateway,
@@ -35,7 +35,7 @@ review materials. The credential provider does not search local storage or
 read environment variables. A real caller would be responsible for secure
 secret acquisition outside this repository. The in-memory token cache expects
 explicit expiry and credentials; it never refreshes automatically. The private
-KIS/Kiwoom/LS token parser can read a synthetic publisher-example response and
+KIS/Kiwoom/LS/DB/Toss token parser can read a synthetic publisher-example response and
 save an explicitly scoped, expiring lease, but it does not contact a broker.
 Token type must be explicit, and Kiwoom's return_code must be integer zero.
 LS returns a relative lifetime in one of its two documented forms: the
@@ -49,6 +49,20 @@ Only a response that `HttpsTransport.send` itself received can be saved
 replaces one from a later send (`TokenFailure.SUPERSEDED`). Offline tests reach
 this path through a mocked HTTPS connection (`receive_token_response` in
 `tests/conftest.py`).
+DB and Toss (ADR 0015) also return a relative `expires_in` (a JSON integer),
+anchored the same way; their token responses must have exactly the documented
+keys and `token_type` exactly `Bearer`. Two DB facts are invisible in its
+response: whether the app key is a production or demo key (they share one
+origin), and whether the token was re-issued with its original, earlier
+expiry. A DB lease is therefore saved only with
+`db_production_key_acknowledged=True` and `db_no_prior_token_acknowledged=True`
+(`TokenFailure.UNACKNOWLEDGED` otherwise), and a token this process already
+received from an earlier send fails `TokenFailure.REISSUED`. Toss keeps one
+valid token per client: in one process, Toss token sends are single-flight per
+client id, and only the lease from the latest send that started writing can be
+used for a Toss quote (`TOKEN_UNAVAILABLE` otherwise, also for a lease put in
+by hand). Another process using the same DB app key or Toss client is not
+visible.
 KIS's sample expiry has no timezone information: `save_example_token_response`
 requires an explicit `kis_expiry_timezone=datetime.timezone(...)` for a valid
 KIS response. Do not guess this for production. Synthetic test offsets are not
@@ -66,7 +80,8 @@ frozen or rolled-back time. Offline tests patch the module-private
 `_wall_clock_ms` instead; that is test scaffolding, not an API. An invalid
 clock reading fails with `INVALID_REQUEST` before anything is written.
 Within one process, the provider and cache are lock-protected, and at most one
-token send per provider and credential identity is in flight. A second one
+token send per provider and credential identity (for Toss: per client id) is
+in flight. A second one
 fails with `TOKEN_IN_FLIGHT` before connecting. Nothing coordinates across
 processes: two processes sharing an app key can still invalidate each
 other's tokens.
@@ -78,10 +93,11 @@ which puts a redacted gateway status code and message into
 default.
 
 A production real HTTPS client would need a **separate reviewed authorization**
-and explicit opt-in. Even then, only three broker token request/response candidates
+and explicit opt-in. Even then, only five broker token request/response candidates
 are currently encoded from publisher evidence; their real/paper acceptance is
-unverified. LS (ADR 0010) uses a form token body and the t1102 quote. DB,
-Toss and Meritz remain blocked for real WireRequests. KIS
+unverified. LS (ADR 0010) uses a form token body and the t1102 quote. DB and
+Toss (ADR 0015) use form token bodies and their PRICE / prices quotes. Meritz
+remains blocked for real WireRequests. KIS
 quote planner still uses older lowercase query keys while newer sample shows
 uppercase; no gateway acceptance has been demonstrated. Responses are raw and
 untrusted; the SDK does not map them into a public Ticker or infer exchange/time.
@@ -108,6 +124,7 @@ callers must never dump their `__dict__`, fields, tracebacks with locals, or
 memory. Python's memory model cannot erase already-created immutable strings.
 
 See [ADR 0009](../decisions/0009-opt-in-credential-https-foundation.md),
+[ADR 0015](../decisions/0015-db-toss-candidate-wire.md) (DB and Toss),
 [dated evidence ledger](../brokers/live-auth-transport-gates-2026-11-05.md),
 [ADR 0008](../decisions/0008-offline-auth-transport-contracts.md), and
 [Issue #17](https://github.com/kisbi3/ktradelink/issues/17).

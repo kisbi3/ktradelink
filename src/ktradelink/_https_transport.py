@@ -1,11 +1,14 @@
 """Private, explicit opt-in HTTPS wire transport; no automatic broker access.
 
-This module can assemble KIS/Kiwoom/LS *candidate* token/quote requests from
-publisher evidence, but actual broker contract/provenance is NOT verified.
+This module can assemble KIS/Kiwoom/LS/DB/Toss *candidate* token/quote
+requests from publisher evidence, but actual broker contract/provenance is
+NOT verified.
+Meritz stays blocked.
 Network I/O is disabled by default and never exercised in CI. No redirects,
 proxies, retries, account calls or orders. Not a public fetch_ticker adapter.
 """
 
+import hashlib
 import http.client
 import itertools
 import json
@@ -49,6 +52,7 @@ class TransportFailure(Enum):
     STALE_CREDENTIAL = "credential_changed_before_send"
     TOKEN_UNAVAILABLE = "token_invalid_before_send"
     TOKEN_IN_FLIGHT = "token_exchange_already_in_flight"
+    QUOTE_IN_FLIGHT = "toss_quote_write_in_flight"
     EVIDENCE_MISSING = "broker_wire_contract_not_verified"
     CONNECT = "https_connect_failed"
     TLS = "tls_handshake_failed"
@@ -85,7 +89,8 @@ def _reject(kind: TransportFailure, delivery: DeliveryState = DeliveryState.NOT_
     raise TransportError(kind, delivery)
 
 
-_SUPPORTED_CANDIDATES = frozenset(("kis", "kiwoom", "ls"))
+# Meritz stays out: every Meritz error is HTTP 500 and its quote needs a MAC.
+_SUPPORTED_CANDIDATES = frozenset(("kis", "kiwoom", "ls", "db", "toss"))
 
 
 def _token_wire(
@@ -94,8 +99,10 @@ def _token_wire(
     """The one canonical token body/header shape per evidenced broker.
 
     KIS/Kiwoom: JSON from their pinned publisher samples. LS: form body from
-    its API guide token detail (``scope=oob``; TLS verification is never
-    disabled). DB's URL-query sample and every other broker fail closed.
+    its API guide token detail. DB: the same form fields, from its API guide
+    token detail and the official SDK at 564b5100 (ADR 0015); the testbed's
+    URL-query sample is never built. TLS verification is never disabled.
+    Every other broker fails closed.
     """
     key_name, secret_name = auth.credential_field_names
     if auth.broker in ("kis", "kiwoom") and auth.token_request_format == "json":
@@ -105,15 +112,84 @@ def _token_wire(
             secret_name: pair.client_secret,
         }, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
         return body, (("content-type", "application/json;charset=UTF-8"),)
-    if auth.broker == "ls" and auth.token_request_format == "form" and auth.scope == "oob":
-        body = urlencode((
+    if (auth.broker in ("ls", "db") and auth.token_request_format == "form"
+            and auth.scope == "oob"):
+        fields = (
             ("grant_type", "client_credentials"),
             (key_name, pair.client_key),
             (secret_name, pair.client_secret),
             ("scope", auth.scope),
-        )).encode("ascii")
-        return body, (("content-type", "application/x-www-form-urlencoded"),)
-    _reject(TransportFailure.EVIDENCE_MISSING)
+        )
+    elif (auth.broker == "toss" and auth.token_request_format == "form" and auth.scope is None
+            and (key_name, secret_name) == ("client_id", "client_secret")):
+        # OpenAPI 1.2.28 OAuth2TokenRequest: exactly these three form fields.
+        fields = (
+            ("grant_type", "client_credentials"),
+            (key_name, pair.client_key),
+            (secret_name, pair.client_secret),
+        )
+    else:
+        _reject(TransportFailure.EVIDENCE_MISSING)
+    # A lone surrogate cannot be UTF-8 percent-encoded. The UnicodeEncodeError
+    # would carry the whole secret in ``.object``, so it is replaced by a
+    # static error raised outside the handler (no __context__ chain).
+    try:
+        body = urlencode(fields).encode("ascii")
+    except UnicodeError:
+        body = None
+    if body is None:
+        _reject(TransportFailure.INVALID_REQUEST)
+    return body, (("content-type", "application/x-www-form-urlencoded"),)
+
+
+# Toss keeps ONE valid token per client: issuing a new one invalidates the
+# previous one at once (OpenAPI 1.2.28, /oauth2/token). Per-profile caches
+# cannot see that, so this process records, per client id digest, the
+# sequence of the most recent Toss token send that began writing. Only a
+# lease from that send can be used for a Toss quote (ADR 0015). Another
+# process using the same client is NOT visible.
+_TOSS_TOKEN_WRITES: dict[bytes, int] = {}
+# Toss quote writes in progress per client id digest. A quote claims its slot
+# in the same critical section as its final latest-token check, and a Toss
+# token send may not start writing while any slot is held, so no quote write
+# can begin after a newer token write began (ChatGPT review of PR #30, M1).
+_TOSS_QUOTE_WRITES: dict[bytes, int] = {}
+
+
+def _toss_client(pair: CredentialPair) -> bytes:
+    """Digest of the Toss client id; the id itself is never kept here."""
+    # surrogatepass: never raises, so the id cannot leak through an exception.
+    return hashlib.sha256(pair.client_key.encode("utf-8", "surrogatepass")).digest()
+
+
+def _toss_token_write_is_latest(pair: CredentialPair, sequence: object) -> bool:
+    """True only for the latest Toss token send to this client in the process."""
+    if type(sequence) is not int:
+        return False
+    with _TOKEN_STATE_LOCK:
+        return _TOSS_TOKEN_WRITES.get(_toss_client(pair)) == sequence
+
+
+def _claim_toss_quote_write(client: bytes, sequence: object) -> bool:
+    """Atomically re-check that ``sequence`` is still the latest Toss token send
+    and register a quote write for ``client``. Release with
+    ``_release_toss_quote_write``. No I/O happens under the lock."""
+    if type(sequence) is not int:
+        return False
+    with _TOKEN_STATE_LOCK:
+        if _TOSS_TOKEN_WRITES.get(client) != sequence:
+            return False
+        _TOSS_QUOTE_WRITES[client] = _TOSS_QUOTE_WRITES.get(client, 0) + 1
+        return True
+
+
+def _release_toss_quote_write(client: bytes) -> None:
+    with _TOKEN_STATE_LOCK:
+        remaining = _TOSS_QUOTE_WRITES.get(client, 0) - 1
+        if remaining > 0:
+            _TOSS_QUOTE_WRITES[client] = remaining
+        else:
+            _TOSS_QUOTE_WRITES.pop(client, None)
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -278,15 +354,15 @@ def _candidate_broker(identity: CredentialIdentity) -> None:
 def build_token_request(
     identity: CredentialIdentity, provider: InMemoryCredentialProvider,
 ) -> WireRequest:
-    """KIS/Kiwoom/LS candidate token POST from publisher evidence, no sending."""
+    """Candidate token POST from publisher evidence, no sending."""
     if type(identity) is not CredentialIdentity or type(provider) is not InMemoryCredentialProvider:
         _reject(TransportFailure.INVALID_REQUEST)
     _candidate_broker(identity)
     creds = provider.load(identity)
     provider.require_current(creds)
     auth = authentication_requirements(identity.broker, environment=identity.environment)
-    # Never clone DB's unsafe URL credential example or infer other brokers'
-    # token body semantics: _token_wire fails closed for them.
+    # Never clone DB's unsafe URL credential testbed example or infer other
+    # brokers' token body semantics: _token_wire fails closed for them.
     body, headers = _token_wire(auth, creds.pair)
     return WireRequest(
         auth, "POST", auth.token_origin, auth.token_path, (), headers, body, "token",
@@ -299,7 +375,12 @@ def build_quote_request(
     provider: InMemoryCredentialProvider, tokens: InMemoryTokenCache,
     *, now_ms: int,
 ) -> WireRequest:
-    """Candidate HTTP quote request, never an attested broker or market adapter."""
+    """Candidate HTTP quote request, never an attested broker or market adapter.
+
+    A Toss quote needs the lease from the latest Toss token send to that
+    client in this process; anything else, including a lease put into the
+    cache by hand, fails ``TOKEN_UNAVAILABLE`` (ADR 0015).
+    """
     if (type(plan) is not QuoteRequestPlan or type(identity) is not CredentialIdentity
             or type(provider) is not InMemoryCredentialProvider
             or type(tokens) is not InMemoryTokenCache):
@@ -311,6 +392,9 @@ def build_quote_request(
     lease = tokens.get(provider, identity, now_ms=now_ms)
     if lease.snapshot is not credential:
         _reject(TransportFailure.INVALID_REQUEST)
+    if plan.broker == "toss" and not _toss_token_write_is_latest(
+            credential.pair, lease.issue_sequence):
+        _reject(TransportFailure.TOKEN_UNAVAILABLE)
     headers = list(plan.public_headers)
     headers.append(("authorization", f"Bearer {lease.access_token}"))
     if plan.broker == "kis":
@@ -351,7 +435,8 @@ class _TokenSendAttestation:
 
 _TOKEN_STATE_LOCK = threading.Lock()
 _TOKEN_SEQUENCE = itertools.count(1)
-_TOKENS_IN_FLIGHT: set[tuple[int, CredentialIdentity]] = set()
+# (id(provider), identity), or ("toss", client digest) for Toss.
+_TOKENS_IN_FLIGHT: set[tuple[object, object]] = set()
 _TOKEN_ATTESTATIONS: "weakref.WeakKeyDictionary[WireResponse, _TokenSendAttestation]" = (
     weakref.WeakKeyDictionary()
 )
@@ -408,6 +493,9 @@ def _binding_failure(request: WireRequest, now_ms: int) -> TransportFailure | No
             return TransportFailure.TOKEN_UNAVAILABLE
         if current_lease is not request.bearer_lease:
             return TransportFailure.TOKEN_UNAVAILABLE
+        if request.source.broker == "toss" and not _toss_token_write_is_latest(
+                snapshot.pair, current_lease.issue_sequence):
+            return TransportFailure.TOKEN_UNAVAILABLE
     return None
 
 
@@ -423,9 +511,16 @@ class HttpsTransport:
     accepted (follow-up to the ChatGPT review of PR #24).
 
     At most one token request per provider and credential identity is in
-    flight in this process; a second concurrent one fails ``TOKEN_IN_FLIGHT``
-    before connecting. A received token response is attested with its send
-    order and the clock reading taken just before the write.
+    flight in this process (for Toss: per client id, across providers and
+    profiles); a second concurrent one fails ``TOKEN_IN_FLIGHT`` before
+    connecting. A received token response is attested with its send order
+    and the clock reading taken just before the write. A Toss token send that
+    starts writing retires every earlier Toss lease for that client in this
+    process, even if the send then fails (ADR 0015). The final latest-token
+    check of a Toss quote and the claim of its write are one atomic step, and
+    a Toss token send fails ``QUOTE_IN_FLIGHT`` (nothing written) while a
+    Toss quote for the same client is being written, so no quote write starts
+    after a newer token write started. Nothing waits or retries.
 
     With ``collect_diagnostics=True`` (default off), an HTTP error response
     body is read within the usual bound only to extract a redacted status
@@ -477,9 +572,20 @@ class HttpsTransport:
 
         flight_key = None
         sequence = None
+        toss_client = None
+        quote_claimed = False
+        toss_quote_client = None
+        if request.purpose == "quote" and request.source.broker == "toss":
+            toss_quote_client = _toss_client(request.credential_snapshot.pair)
         if request.purpose == "token":
             snapshot = request.credential_snapshot
-            key = (id(snapshot.owner), snapshot.identity)
+            if request.source.broker == "toss":
+                # One token per client on the Toss side: serialise on the
+                # client itself, across providers and profiles.
+                toss_client = _toss_client(snapshot.pair)
+                key = ("toss", toss_client)
+            else:
+                key = (id(snapshot.owner), snapshot.identity)
             with _TOKEN_STATE_LOCK:
                 if key not in _TOKENS_IN_FLIGHT:
                     _TOKENS_IN_FLIGHT.add(key)
@@ -522,6 +628,21 @@ class HttpsTransport:
                     failure = TransportFailure.INVALID_REQUEST
                 else:
                     failure = _binding_failure(request, before_write_ms)
+            if failure is None and toss_client is not None:
+                # From here Toss may issue a new token and invalidate the
+                # previous one, whatever this send's outcome turns out to be.
+                # Never start while a quote with the current token is writing.
+                with _TOKEN_STATE_LOCK:
+                    if _TOSS_QUOTE_WRITES.get(toss_client, 0) > 0:
+                        failure = TransportFailure.QUOTE_IN_FLIGHT
+                    else:
+                        _TOSS_TOKEN_WRITES[toss_client] = sequence
+            if failure is None and toss_quote_client is not None:
+                if _claim_toss_quote_write(toss_quote_client,
+                                           request.bearer_lease.issue_sequence):
+                    quote_claimed = True
+                else:
+                    failure = TransportFailure.TOKEN_UNAVAILABLE
             if failure is None:
                 state = DeliveryState.UNKNOWN  # any write failure may be partial
                 try:
@@ -531,6 +652,10 @@ class HttpsTransport:
                     )
                 except Exception:
                     failure = TransportFailure.WRITE
+                finally:
+                    if quote_claimed:
+                        quote_claimed = False
+                        _release_toss_quote_write(toss_quote_client)
 
             if failure is None:
                 try:
@@ -565,6 +690,8 @@ class HttpsTransport:
                 except Exception:
                     failure = TransportFailure.READ
         finally:
+            if quote_claimed:
+                _release_toss_quote_write(toss_quote_client)
             if conn is not None:
                 try:
                     conn.close()

@@ -46,11 +46,17 @@ def test_token_request_is_publisher_example_json_not_query(broker):
     assert req.path==("/oauth2/tokenP" if broker=="kis" else "/oauth2/token")
 
 
-@pytest.mark.parametrize("broker",("db","toss","meritz"))
-def test_brokers_with_unverified_token_wire_format_fail_closed(broker):
-    p,ident,_=setup(broker)
+def test_meritz_token_and_quote_wire_stay_blocked():
+    # Every Meritz error is HTTP 500 and its quote needs a MAC (ADR 0015).
+    p,ident,s=setup("meritz")
     with pytest.raises(TransportError) as ex:
         build_token_request(ident,p)
+    assert ex.value.kind is TransportFailure.EVIDENCE_MISSING
+    tokens=InMemoryTokenCache()
+    tokens.put(p,s,access_token="SYNTHETIC-TOKEN",expires_at_ms=200,now_ms=1)
+    plan=plan_ticker_request("meritz","005930",venue="KRX",environment="live")
+    with pytest.raises(TransportError) as ex:
+        build_quote_request(plan,ident,p,tokens,now_ms=2)
     assert ex.value.kind is TransportFailure.EVIDENCE_MISSING
 
 

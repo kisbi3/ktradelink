@@ -93,7 +93,9 @@ def test_native_quote_specific_fixed_headers_are_not_credentials() -> None:
     assert ("api-id", "ka10001") in kiwoom.public_headers
     assert ("tr_cd", "t1102") in ls.public_headers
     assert all(name != "tr_id" for name, _ in ls.public_headers)  # not the onboarding demo
-    assert ("cont_yn", "") in db.public_headers
+    assert dict(db.public_headers) == {
+        "content-type": "application/json; charset=utf-8", "cont_yn": "N", "cont_key": "",
+    }  # no partner-only mac_address
     assert toss.public_headers == () and meritz.public_headers == ()
     assert kis.auth.quote_header_names == ("authorization", "appkey", "appsecret")
     assert meritz.auth.quote_header_names == ("authorization", "mac_address")
@@ -135,8 +137,8 @@ def test_post_bodies_are_exactly_evidenced_and_not_unauthorized_order_calls() ->
     d = plan_ticker_request("db", "005930", venue="KRX", environment="live")
     assert json.loads(k.json_body) == {"stk_cd": "005930"}
     assert json.loads(d.json_body) == {
-        "In": {"InputCondMrktDivCode": "J", "InputIscd1": "A005930"}
-    }
+        "In": {"InputCondMrktDivCode": "J", "InputIscd1": "005930"}
+    }  # API guide PRICE example and SDK: bare code for J, not the testbed's "A005930"
     for broker in ("kis", "toss", "meritz"):
         plan = plan_ticker_request(broker, "005930", venue="KRX", environment="live")
         assert plan.json_body is None and plan.method == "GET"
@@ -196,9 +198,10 @@ def test_unknown_broker_never_gets_fallback_origin(broker: object) -> None:
         plan_ticker_request(broker, "005930", venue="KRX", environment="live")
 
 
-def test_db_unsafe_provider_token_sample_is_not_a_token_request() -> None:
+def test_db_token_metadata_is_the_form_body_not_the_unsafe_query_sample() -> None:
     auth = authentication_requirements("db", environment="live")
-    assert auth.token_request_format == "unsafe_query_sample_only"
+    assert auth.token_request_format == "form"
+    assert auth.scope == "oob"
     assert auth.token_exchange_implemented is False
     assert "appkey" in auth.credential_field_names
     assert "appsecretkey" in auth.credential_field_names
