@@ -1,7 +1,7 @@
 # Private credential and HTTPS foundation (not a live broker client)
 
 This is an **implementation candidate for Issue #17**. Python can hold explicitly
-supplied credentials and bearer tokens, construct evidence-scoped KIS/Kiwoom
+supplied credentials and bearer tokens, construct evidence-scoped KIS/Kiwoom/LS
 example requests and implement a TLS-verified HTTPS send. **Nothing here is a
 functional or verified public `fetch_ticker` API**. No actual service is
 contacted by importing the package or running its CI.
@@ -33,9 +33,14 @@ review materials. The credential provider does not search local storage or
 read environment variables. A real caller would be responsible for secure
 secret acquisition outside this repository. The in-memory token cache expects
 explicit expiry and credentials; it never refreshes automatically. The private
-KIS/Kiwoom token parser can read a synthetic publisher-example response and
+KIS/Kiwoom/LS token parser can read a synthetic publisher-example response and
 save an explicitly scoped, expiring lease, but it does not contact a broker.
 Token type must be explicit, and Kiwoom's return_code must be integer zero.
+LS returns a relative lifetime in one of its two documented forms: the
+example's `expires_in` JSON integer or the field table's `expire_in` decimal
+string (mixed or duplicate forms fail). `scope` must be `oob`, and the
+lease expires that many seconds after the `now_ms` you pass — so pass the time
+*before* sending the token request.
 KIS's sample expiry has no timezone information: `save_example_token_response`
 requires an explicit `kis_expiry_timezone=datetime.timezone(...)` for a valid
 KIS response. Do not guess this for production. Synthetic test offsets are not
@@ -55,9 +60,10 @@ clock reading fails with `INVALID_REQUEST` before anything is written.
 Concurrent modification across threads/processes is not supported or attested.
 
 A production real HTTPS client would need a **separate reviewed authorization**
-and explicit opt-in. Even then, only two broker token request/response candidates
-are currently encoded from publisher samples; their real/paper acceptance is
-unverified. The other four brokers remain blocked for real WireRequests. KIS
+and explicit opt-in. Even then, only three broker token request/response candidates
+are currently encoded from publisher evidence; their real/paper acceptance is
+unverified. LS (ADR 0010) uses a form token body and the t1102 quote. DB,
+Toss and Meritz remain blocked for real WireRequests. KIS
 quote planner still uses older lowercase query keys while newer sample shows
 uppercase; no gateway acceptance has been demonstrated. Responses are raw and
 untrusted; the SDK does not map them into a public Ticker or infer exchange/time.

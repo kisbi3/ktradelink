@@ -160,8 +160,8 @@ def plan_ticker_request(
 ) -> QuoteRequestPlan:
     """Construct an offline official-example quote TEMPLATE for one KR symbol.
 
-    No network sending or authentication is performed. In particular,
-    LS is ONLY the publisher's onboarding GET demonstration, NOT t1102.
+    No network sending or authentication is performed. LS uses the t1102
+    REST contract from the publisher's API guide (not the onboarding GET demo).
     The caller must not assume a real exchange-specific response follows.
     """
     origin = _origin(broker, environment)
@@ -189,10 +189,24 @@ def plan_ticker_request(
         )
         json_body = json.dumps({"stk_cd": code}, separators=(",", ":"))
     elif broker == "ls":
+        # LS API guide, t1102 REST detail (retrieved 2026-11-05; see
+        # docs/brokers/live-auth-transport-gates-2026-11-05.md). LS treats an
+        # unknown exchgubun as KRX, so the KRX code "K" is always sent
+        # explicitly. mac_address is mandatory only for corporate customers;
+        # the publisher sample sends it empty and corporate use is unsupported.
+        method = "POST"
         path = "/stock/market-data"
-        query = (("shcode", code),)
-        public_headers = (("tr_id", "STKCURR"),)
-        evidence = "publisher_onboarding_demo_only_not_t1102"
+        public_headers = (
+            ("content-type", "application/json; charset=utf-8"),
+            ("tr_cd", "t1102"),
+            ("tr_cont", "N"),
+            ("tr_cont_key", ""),
+            ("mac_address", ""),
+        )
+        json_body = json.dumps(
+            {"t1102InBlock": {"shcode": code, "exchgubun": "K"}},
+            separators=(",", ":"),
+        )
     elif broker == "db":
         method = "POST"
         path = "/api/v1/quote/kr-stock/inquiry/price"

@@ -58,10 +58,10 @@ broker sent it.
 ## Scope and limitations
 
 - Six broker *candidate* profiles are `kis`, `kiwoom`, `ls`, `db`,
-  `toss`, `meritz`. For `ls`, this is **only the official onboarding flat
-  `price` example**, not a confirmed production t1102OutBlock decoder.
-- Price parsing is exact unsigned fixed-decimal text; only the LS onboarding
-  demo also accepts a JSON unsigned **integer** for `price`.
+  `toss`, `meritz`. For `ls`, this is the published t1102 `t1102OutBlock`
+  shape (ADR 0010), not a gateway-verified decoder.
+- Price parsing is exact unsigned fixed-decimal text; only LS t1102 also
+  accepts a JSON unsigned **integer** for `price`.
 - Broker output fields and wrappers are **not interchangeable**. DB `Sdpr`
   is never assigned to `previous_close`. Signed Kiwoom `cur_prc` strings
   fail until its native semantics are documented; no `abs()`.

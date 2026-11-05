@@ -65,7 +65,7 @@ broker-side exchange route.
 | --- | --- | --- |
 | KIS | GET + KRX `J` + `fid_input_iscd`, `tr_id` | Bearer plus `appkey` / `appsecret` |
 | Kiwoom | POST JSON `stk_cd`, `api-id` | Bearer, separate real/paper host labels |
-| LS | Official onboarding GET `shcode` only | Bearer; **NOT** confirmed real `t1102` |
+| LS | POST t1102 `t1102InBlock` (`shcode`, `exchgubun=K`), `tr_cd` | Bearer; t1102 from the publisher API guide, gateway unverified |
 | DB | POST nested `In` with `A`-prefixed code | Bearer; official token sample is **unsafe**, do not replicate |
 | Toss | GET `symbols` query | Bearer, **NO account header** for public market quote |
 | Meritz | GET `mrkt_div_code=J`, `iscd` | Bearer plus required `mac_address` |

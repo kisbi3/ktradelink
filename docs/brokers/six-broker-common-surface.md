@@ -46,7 +46,7 @@ Evidence:
 **Historical snapshot:** When this initial survey was written, LS, DB and
 Toss field-level mappings were still unconfirmed. The [follow-up evidence
 ledger](six-broker-ticker-decoders.md) now records publisher-sourced examples:
-LS onboarding demonstration (NOT real t1102 response), DB Out.Prpr and
+LS t1102OutBlock (ADR 0010; gateway unverified), DB Out.Prpr and
 Toss result[].lastPrice. These are only offline decoder candidates,
 not verified broker adapters. Market, session and volume scope remain
 unverified.

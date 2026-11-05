@@ -217,6 +217,32 @@ fn status(
     }
 }
 
+/// A status field that MUST be present with exactly this text value.
+fn required_status(
+    record: &Map<String, Value>,
+    key: &'static str,
+    expected: &'static str,
+) -> Result<(), DecodeError> {
+    match record.get(key) {
+        None | Some(Value::Null) => Err(error(key, DecodeKind::MissingRequired)),
+        Some(Value::String(value)) if value == expected => Ok(()),
+        Some(_) => Err(error(key, DecodeKind::SourceStatus)),
+    }
+}
+
+/// An identifier that MUST be present and equal to the requested symbol.
+fn required_identifier(
+    record: &Map<String, Value>,
+    key: &'static str,
+    requested: &str,
+) -> Result<(), DecodeError> {
+    if required_str(record, key)? == requested {
+        Ok(())
+    } else {
+        Err(error(key, DecodeKind::AmbiguousSymbol))
+    }
+}
+
 fn matching_identifier(
     record: &Map<String, Value>,
     key: &'static str,
@@ -319,9 +345,17 @@ pub fn decode_ticker_candidate(
             qty = volume(root, "trde_qty")?;
         }
         Broker::Ls => {
-            // LS publisher onboarding demo flat JSON, NOT confirmed t1102OutBlock.
-            matching_identifier(root, "shcode", symbol)?;
-            prices.last = price(root, "price", true, true)?;
+            // LS t1102 REST (API guide retrieved 2026-11-05): root rsp_cd and
+            // t1102OutBlock. Unlike older optional-status examples, both the
+            // status and the echoed shcode are REQUIRED on this route.
+            required_status(root, "rsp_cd", "00000")?;
+            let row = child_object(root, "t1102OutBlock")?;
+            required_identifier(row, "shcode", symbol)?;
+            prices.last = price(row, "price", true, true)?;
+            qty = volume(row, "volume")?;
+            // open/high/low are 0 before the first trade in the publisher
+            // example; whether 0 is a sentinel is undocumented, so they are
+            // not mapped. `price` is unsigned; direction lives in `sign`.
         }
         Broker::Db => {
             status(root, "rsp_cd", StatusSpec::ExactText("00000"))?;
