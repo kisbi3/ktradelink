@@ -4,7 +4,9 @@ This is an **implementation candidate for Issue #17**. Python can hold explicitl
 supplied credentials and bearer tokens, construct evidence-scoped KIS/Kiwoom/LS
 example requests and implement a TLS-verified HTTPS send. **Nothing here is a
 functional or verified public `fetch_ticker` API**. No actual service is
-contacted by importing the package or running its CI.
+contacted by importing the package or running its CI. The experimental public
+entry point that composes these pieces, still unverified against any gateway,
+is described in [public-fetch-ticker.md](public-fetch-ticker.md) (ADR 0013).
 
 The safe default is a **disabled** transport. This example is fully offline and
 uses intentionally synthetic values that will never authenticate anywhere:
