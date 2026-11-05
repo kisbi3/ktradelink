@@ -65,7 +65,7 @@ publisher repo note, `G` publisher guide, `—` not found.
 | Route(s) | `FHKST01010300` GET `…/quotations/inquire-ccnl` 주식현재가 체결; `FHPST01060000` GET `…/quotations/inquire-time-itemconclusion` 당일시간대별체결; after-hours `FHPST02310000` `…/inquire-time-overtimeconclusion` — E | `ka10003` 체결정보요청; `ka10084` 당일전일체결요청; `ka10055` 당일전일체결량요청; all POST `/api/dostk/stkinfo` — F+E | `t8454` (통합) TPS 1; `t1301` TPS 2; `t1310` (분/틱, 당일/전일) TPS 2; all POST `/stock/market-data` — F+E | `CONCLUSION` POST `…/inquiry/hour-price`; `DAYTRADE` POST `…/inquiry/daily-price`; TPS 3 each — F+E+C | `GET /api/v1/trades` (`getTrades`) — F | `ohhts_1002_001r` GET `/market/v1/trades/ticks`; aggregate sibling `ohhts_1002_002r` `/trades/minutes` — F+E |
 | Individual trade vs aggregate | **not documented** for any route. Legacy wording "체결 내역 30건" (L). Inference only. | `ka10003`: not stated; example cumulative deltas match each row's quantity (E, inference). `ka10084`: request selects `tic_min` "0:틱, 1:분" with **one** response table (F) — row type depends on the request. | not stated; t8454 example rows behave as single executions (E, inference); t1310 `timegb` "0:분 / 1:틱" selects the row type (F) | CONCLUSION: executions per publisher example-code prose (C), 19 of 20 example rows have `CntgVol` `"0"` (E); DAYTRADE: executions by example (E, inference) | individual (F field names; "체결 틱" only in G and WebSocket text) | ticks: individual, "해당 체결의 수량" (F+E); minutes: grouped, interval undocumented (F) |
 | Timestamp / date in row | `stck_cntg_hour` "주식 체결 시간"; format not documented; **no date field** — E | `tm` / `cntr_tm` "HHmmss"; **no date field** — F | `chetime` String 10, `HHMMSS` in examples, **no date**; t1310 example has U+0000 inside (F+E) | `Hour` String 16, `HHMMSS` in examples, **no date** (F+E) | `timestamp` ISO-8601 date-time with offset, ms in examples; **date present** (F+E) | `prpr_hour` "체결 시각(HHMMSS)", **no date**, zone not stated (F) |
-| Aggressor side | **none** on any route; `tday_rltv` "당일 체결강도" is a ratio, not a side — E | **not documented** for REST. Quantity is "부호가 포함된 숫자" (F) and examples carry `-` quantities (E); the meaning is documented **only** on WebSocket `0B` ("+는 매수체결,-는 매도체결", F). | **none per row**; day-cumulative `mdvolume`/`msvolume` "매도/매수체결수량" counters, assignment rule not documented (F); side only by differencing (inference) | CONCLUSION none; DAYTRADE per-row `ShnuCnqn` "매수체결량" / `SelnCnqn` "매도체결량", assignment rule not documented (F+E) | **none**; WebSocket text: "매수/매도 구분이 없고" (F, AsyncAPI) | **none**; `askp`/`bidp` "체결 시점의" quotes and `tday_rltv` only (F) |
+| Aggressor side | **none** on any route; `tday_rltv` "당일 체결강도" is a ratio, not a side — E | **not documented** for REST. Quantity is "부호가 포함된 숫자" (F) and examples carry `-` quantities (E); the meaning is documented **only** on WebSocket `0B` ("+는 매수체결,-는 매도체결", F). | **none per row**; day-cumulative `mdvolume`/`msvolume` "매도/매수체결수량" counters, assignment rule not documented (F); a row-to-row bucket change is reference only, **not** aggressor-side evidence (G-S4) | CONCLUSION none; DAYTRADE per-row `ShnuCnqn` "매수체결량" / `SelnCnqn` "매도체결량", assignment rule not documented (F+E) | **none**; WebSocket text: "매수/매도 구분이 없고" (F, AsyncAPI) | **none**; `askp`/`bidp` "체결 시점의" quotes and `tday_rltv` only (F) |
 | Trade id / sequence | none — E | none — F | none — F | none — F | none — F; WebSocket "sequence 필드는 제공되지 않습니다" | none — F |
 | Pagination | `inquire-ccnl`: none. `itemconclusion`: time cursor `FID_INPUT_HOUR_1` "기준시간-이전체결처리" (L); boundary undocumented — E+L | `cont-yn` / `next-key` headers on all three (F); boundary undocumented. `ka10084` also `tm` HHMM (F). | body `cts_time` + headers `tr_cont`/`tr_cont_key` (F); FAQ on `cts_` keys (G); boundary undocumented | headers `cont_yn`/`cont_key` (F); body reused per page (C); boundary undocumented | **none**; `count` 1–50 (F); "과거 방향 페이지네이션 파라미터가 없어" (G) | **none**; "tr_cont_key)가 포함되지 않습니다" (F) |
 | History depth / rows per call | `inquire-ccnl` "최근30건" (L); `itemconclusion` "당일" by title (E), "30건" (L) | rows per page not documented; `ka10084`/`ka10055` `tdy_pred` "당일 : 1, 전일 : 2" (F); `ka10003` not documented | t1310 "0:당일 / 1:전일" (F); t1301/t8454 not documented; page size not documented | not documented; page size not documented (examples 20 rows) | "당일 최근 체결", ≤50 (F+G) | latest ≤40, newest first (F); trading day not stated |
@@ -596,9 +596,11 @@ ledger), which is not evidence for these TRs.
     which fits a seller-initiated / buyer-initiated split. This reading
     uses outside market-microstructure knowledge; the publisher does not
     define "매도체결"/"매수체결".
-  - Per-row side can only be derived by differencing cumulative counters
-    between adjacent rows, which needs both rows in hand (a page boundary
-    or a filtered row breaks it).
+  - Differencing the counters of adjacent rows shows only which
+    **broker-reported** bucket changed. That is not aggressor-side
+    evidence, because the assignment rule is undocumented (G-S4). It
+    also needs both rows in hand; a page boundary or a filtered row
+    breaks it.
   - In the t1301 and t1310 examples `volume` − `mdvolume` − `msvolume` =
     6,062 / 6,063, i.e. some volume is in neither bucket. **Inference:**
     auction prints may be unclassified. Not documented.
@@ -1201,8 +1203,9 @@ The minutes route is listed for completeness; it is **not** a tick source.
   side.
   - DB `DAYTRADE` reports per-row "매수체결량"/"매도체결량" with no
     assignment rule.
-  - LS reports day-cumulative "매도/매수체결수량" counters, from which a
-    side can only be inferred by differencing adjacent rows.
+  - LS reports day-cumulative "매도/매수체결수량" counters. A change
+    between adjacent rows shows a broker-reported bucket, not an aggressor
+    side (G-S4).
   - Kiwoom's REST quantity sign is undocumented; its meaning is documented
     only for the WebSocket feed.
   - KIS, Toss and Meritz have no side field.
@@ -1301,21 +1304,34 @@ sanitized fixtures, **before** any trade decoder, request plan or public
   neither is non-zero fails closed. The example books the 15:30 closing
   print (1,321,868 shares) entirely as `SelnCnqn`, so auction prints carry
   a label that is not an aggressor side.
-- **G-S4 [LS] side by differencing only:** LS rows carry day-cumulative
-  `mdvolume`/`msvolume` counters, not a side. A side may be derived only by
-  differencing two adjacent rows **within one response**. Across a page
-  boundary, after a filtered row (`cvolume` filter) or where neither
-  counter moves, the side is unknown. Volume in neither bucket
-  (`volume` − `mdvolume` − `msvolume` > 0 in the `t1301`/`t1310`
-  examples) means some prints are unclassified.
+- **G-S4 [LS] bucket changes are not a side:** LS rows carry
+  day-cumulative `mdvolume`/`msvolume` counters, not a side. Public
+  `side` stays `None` (G-S1).
+  - The change between two adjacent rows **within one response** shows
+    only which **broker-reported** 매도/매수 bucket moved. It is
+    reference information, **not** evidence of the aggressor side,
+    because LS does not document how a trade is assigned to a bucket.
+  - Even that bucket change is invalid or incomplete:
+    - across a page boundary;
+    - after a filtered row (`cvolume` filter);
+    - where neither counter moves;
+    - where volume falls in neither bucket. In the `t1301`/`t1310`
+      examples, `volume` − `mdvolume` − `msvolume` > 0, so some prints
+      are unclassified.
+  - Populating `side` from LS requires further publisher evidence or a
+    separately authorized, verified fixture comparison.
 
 ### 10.3 Trade id, dedup and ordering
 
 - **G-D1 No synthesized id:** none of the six brokers documents a trade
   id. Never synthesize one (no hash of time+price+qty, no row index).
-  - Identical rows are real: [Kiwoom] `ka10055` has two rows identical
-    except for `acc_trde_qty`; [DB] `DAYTRADE` has four byte-identical
-    `151959`/`73200`/`ShnuCnqn "1"` rows; [Meritz] has two `195958` rows.
+  - Rows with the same time, price and quantity may be separate trades,
+    so never deduplicate by content alone. Publisher examples (illustrative
+    values, not verified trades) contain such rows:
+    - [Kiwoom] `ka10055` has two rows identical except for `acc_trde_qty`.
+    - [DB] `DAYTRADE` has four byte-identical
+      `151959`/`73200`/`ShnuCnqn "1"` rows.
+    - [Meritz] has two `195958` rows.
 - **G-D2 Dedup across pages or polls:** with no id, overlap can only be
   resolved by a verified monotonic field. Cumulative volume is a candidate
   where it exists ([KIS] `itemconclusion` `acml_vol`, [Kiwoom]
