@@ -50,8 +50,11 @@ the assistant to access accounts, fetch tokens or make any real network request.
   ends before its declared `Content-Length` is a `READ` failure with
   `RESPONSE_RECEIVED` state, because `http.client`'s bounded `read(amt)` does
   not raise `IncompleteRead` on an early close (including a TLS close without
-  `close_notify`). The send clock is fixed at transport construction and read
-  twice; there is no per-call clock override (follow-up to the PR #22 review).
+  `close_notify`). Token expiry is always checked against the real UTC clock,
+  read before connecting and again after the TLS handshake. `HttpsTransport`
+  accepts no clock argument, per call or at construction, so a network-enabled
+  sender cannot be given a frozen or rolled-back time (follow-ups to the PR #22
+  and PR #24 reviews).
 - Token request construction/response parsing is **candidate-only for KIS and
   Kiwoom** based on pinned official example source files. A token response must
   explicitly declare bearer `token_type`; Kiwoom must also have integer

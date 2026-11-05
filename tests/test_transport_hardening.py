@@ -1,4 +1,4 @@
-"""Regression tests for the PR #22 review findings L1 and L2.
+"""Regression tests for the PR #22 review findings L1/L2 and PR #24 review M1.
 
 No socket, DNS, broker, account or token exchange is executed: responses are
 parsed by the real ``http.client.HTTPResponse`` from in-memory bytes.
@@ -142,6 +142,13 @@ def test_send_has_no_per_call_clock_override():
         HttpsTransport(network_enabled=True).send(_token_request(), now_ms=1)
 
 
+@pytest.mark.parametrize("enabled", [True, False])
+def test_sender_accepts_no_caller_clock(enabled):
+    # A network-capable sender must never be handed a frozen/rolled-back clock.
+    with pytest.raises(TypeError):
+        HttpsTransport(network_enabled=enabled, clock=lambda: 2)
+
+
 def _quote_request(expires_at_ms):
     provider = InMemoryCredentialProvider()
     identity = CredentialIdentity("kiwoom", "live", "hardening")
@@ -153,13 +160,33 @@ def _quote_request(expires_at_ms):
     return build_quote_request(plan, identity, provider, cache, now_ms=1)
 
 
-def test_injected_clock_is_read_again_after_handshake(monkeypatch):
+def test_token_expired_by_real_clock_is_never_written(monkeypatch):
+    # ChatGPT review of PR #24, M1: the lease was valid at build time (now_ms=1)
+    # but the real epoch is far past expires_at_ms=100.
+    request = _quote_request(expires_at_ms=100)
+    conn = MagicMock()
+    factory = MagicMock(return_value=conn)
+    monkeypatch.setattr(http.client, "HTTPSConnection", factory)
+    with pytest.raises(TransportError) as caught:
+        HttpsTransport(network_enabled=True).send(request)
+    assert caught.value.kind is TransportFailure.TOKEN_UNAVAILABLE
+    assert caught.value.delivery is DeliveryState.NOT_SENT
+    factory.assert_not_called()
+    conn.request.assert_not_called()
+
+
+def _patch_clock(monkeypatch, clock):
+    monkeypatch.setattr("ktradelink._https_transport._wall_clock_ms", clock)
+
+
+def test_clock_is_read_again_after_handshake(monkeypatch):
     request = _quote_request(expires_at_ms=100)
     readings = iter([10, 100])  # valid before connect, expired after the handshake
+    _patch_clock(monkeypatch, lambda: next(readings))
     conn = MagicMock()
     monkeypatch.setattr(http.client, "HTTPSConnection", MagicMock(return_value=conn))
     with pytest.raises(TransportError) as caught:
-        HttpsTransport(network_enabled=True, clock=lambda: next(readings)).send(request)
+        HttpsTransport(network_enabled=True).send(request)
     assert caught.value.kind is TransportFailure.TOKEN_UNAVAILABLE
     assert caught.value.delivery is DeliveryState.NOT_SENT
     conn.connect.assert_called_once()
@@ -173,10 +200,11 @@ def _raising_clock():
 @pytest.mark.parametrize("clock", [lambda: -1, lambda: 1.5, lambda: True, lambda: None,
                                    _raising_clock])
 def test_bad_clock_reading_fails_before_connecting(clock, monkeypatch):
+    _patch_clock(monkeypatch, clock)
     factory = MagicMock(side_effect=AssertionError("must not connect"))
     monkeypatch.setattr(http.client, "HTTPSConnection", factory)
     with pytest.raises(TransportError) as caught:
-        HttpsTransport(network_enabled=True, clock=clock).send(_token_request())
+        HttpsTransport(network_enabled=True).send(_token_request())
     assert caught.value.kind is TransportFailure.INVALID_REQUEST
     assert caught.value.delivery is DeliveryState.NOT_SENT
     assert caught.value.__context__ is None
@@ -186,18 +214,12 @@ def test_bad_clock_reading_fails_before_connecting(clock, monkeypatch):
 
 def test_bad_clock_reading_after_handshake_stops_before_write(monkeypatch):
     readings = iter([10, -1])
+    _patch_clock(monkeypatch, lambda: next(readings))
     conn = MagicMock()
     monkeypatch.setattr(http.client, "HTTPSConnection", MagicMock(return_value=conn))
     with pytest.raises(TransportError) as caught:
-        HttpsTransport(network_enabled=True, clock=lambda: next(readings)).send(_token_request())
+        HttpsTransport(network_enabled=True).send(_token_request())
     assert caught.value.kind is TransportFailure.INVALID_REQUEST
     assert caught.value.delivery is DeliveryState.NOT_SENT
     conn.request.assert_not_called()
     conn.close.assert_called_once()
-
-
-@pytest.mark.parametrize("clock", [1, "now", object()])
-def test_non_callable_clock_is_rejected(clock):
-    with pytest.raises(TransportError) as caught:
-        HttpsTransport(network_enabled=True, clock=clock)
-    assert caught.value.kind is TransportFailure.INVALID_REQUEST
