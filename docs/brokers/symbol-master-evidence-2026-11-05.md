@@ -646,7 +646,8 @@ retrieved.
      continuation key exists.
    - Whether a full-market response can be split is not documented.
    - A `load_markets` must not assume one call is complete unless the
-     response `tr_cont` says so.
+     response `tr_cont` is exactly `N`. A missing or empty `tr_cont` is not
+     documented as final and must be an error (G-C3).
 
 ## 5. DB Securities (DB증권)
 
@@ -1323,8 +1324,8 @@ None of the files below is edited by this change.
 | [market-data spec §3](../specifications/market-data-v0.1-draft.md) L60: v1 symbol "exactly six ASCII digits" | Excludes codes documented or observed at four brokers (§8.3 item 1; G-I1) |
 | [ADR 0013](../decisions/0013-public-fetch-ticker-surface.md) L37 (on `main` `03680cd6`): `fetch_ticker` `symbol` "must be exactly six ASCII digits (`InvalidSymbol`)" | The same constraint now exists in public code. A `load_markets` result containing alphanumeric codes would list symbols that `fetch_ticker` rejects (G-I1) |
 | market-data spec §8: "Define `load_markets` master sources, cache invalidation, session/venue listing, and data rights" | Sources recorded for all six brokers; cache, venue and rights remain open (§10) |
-| Capability inventory (branch `claude/issue-17-capability-inventory`, unmerged) row 5: KIS `kospi`/`kosdaq` files; Kiwoom `ka10099`; LS `t8436`; DB `JCODES`; Toss `/stocks/all`; Meritz `kospi`/`kosdaq` files | **Confirmed**, plus KIS `konex`, Kiwoom `ka10100`, LS `t8430`/`t9945`, Toss `/stocks` detail and Meritz `exst`/`all` |
-| Candle audit (branch `claude/issue-17-candle-evidence`, unmerged): Kiwoom pin `953e5dbf` | Equivalent tree to `c7a3d254` (§3.1); its Kiwoom blobs remain valid |
+| Capability inventory (branch `claude/issue-17-capability-inventory`; unmerged when this audit was written, since merged as PR #32 at `7b7aa07`) row 5: KIS `kospi`/`kosdaq` files; Kiwoom `ka10099`; LS `t8436`; DB `JCODES`; Toss `/stocks/all`; Meritz `kospi`/`kosdaq` files | **Confirmed**, plus KIS `konex`, Kiwoom `ka10100`, LS `t8430`/`t9945`, Toss `/stocks` detail and Meritz `exst`/`all` |
+| Candle audit (branch `claude/issue-17-candle-evidence`; unmerged when this audit was written, since merged as PR #31 at `0d179f9`): Kiwoom pin `953e5dbf` | Equivalent tree to `c7a3d254` (§3.1); its Kiwoom blobs remain valid |
 
 ## 10. Implementation gates for `load_markets`
 
@@ -1424,11 +1425,26 @@ tags are in brackets.
   권장" and [Meritz] "매 영업일 자동으로 갱신" give a cadence but no as-of
   field; [KIS], [Kiwoom], [LS] and [DB] document neither. Any refresh
   policy is a KTradeLink choice and must be labelled as such.
-- **G-C3 Completeness:** [Kiwoom] page until `cont-yn` ≠ `Y`; [LS] treat
-  the master as complete only when `tr_cont` is `N` or empty; [DB] loop on
-  `cont_yn` = `Y`. A page cap, an empty or repeated continuation key must
-  raise, not truncate (unlike [Kiwoom] W3 `MAX_PAGES = 10` and [DB] D5
-  `_PAGED_SAFETY_CAP = 100`, which warn and return partial data).
+- **G-C3 Completeness (fail closed):** continue **only** on the exact
+  value `Y`, and treat the master as complete **only** on an explicit,
+  evidenced terminal value. Any other response continuation header
+  (missing, empty, whitespace, lowercase or unknown) is an error, never
+  end-of-list. Publisher SDK loops that stop on "≠ `Y`" ([Kiwoom] W3,
+  [DB] D5) are client code, not evidence of the terminal encoding.
+  - [LS] `tr_cont` "Y:연속○ N:연속×" (§4.2): `N` is the documented
+    terminal value. A missing or empty `tr_cont` is **not** documented as
+    final and must raise.
+  - [DB] the response `cont_yn` is described only as "연속거래 여부"; the
+    `Y`/`N` meanings are documented on the *request* header (§5.2).
+    **Inference:** `N` is terminal. Accept it only once authorized,
+    sanitized fixtures confirm the response encoding.
+  - [Kiwoom] `cont-yn` documents only "다음 데이터가 있을시 Y값 전달"
+    (§3.2). The value sent on the last page (`N`, empty or absent) is
+    **not documented**. Until fixtures establish it, a Kiwoom master
+    cannot be marked complete and `load_markets` stays blocked for it.
+  - A page cap, or an empty or repeated continuation key while the value is
+    `Y`, must raise, not truncate (unlike [Kiwoom] W3 `MAX_PAGES = 10` and
+    [DB] D5 `_PAGED_SAFETY_CAP = 100`, which warn and return partial data).
 - **G-C4 Empty or short results never replace a cache:** [DB] documents
   success code `00000` with "모의투자 데이터가 없습니다."; [LS] documents its
   success code only in examples. A sharply shorter list is an error.
@@ -1445,19 +1461,30 @@ tags are in brackets.
 - **G-M1:** each master is per broker. A cross-broker view needs an explicit,
   reviewed join rule (at least short code + market segment) and must report
   conflicts, never pick one broker's value silently.
-- **G-M2:** a symbol absent from one broker's master is "not listed by that
-  broker" (for example [Toss] "토스증권에서 거래 가능한 종목만"), not
-  "delisted".
+- **G-M2:** a symbol absent from one broker's master means only "not in
+  that broker's verified snapshot under the filters used" (for example
+  [Toss] returns "토스증권에서 거래 가능한 종목만"). It does not establish
+  that the symbol is delisted, unlisted on an exchange, unsupported by the
+  broker, or that the lookup failed.
 - **G-M3:** the six-broker common subset is short code + market segment
   only. ISIN, names and types cannot be common fields while [Kiwoom] lacks
   ISIN and [Meritz] has no column specification.
 
 ### 10.7 Data rights
 
-- **G-R1:** no source grants storage or redistribution rights, and [Toss]
-  and [Meritz] FAQs restrict distribution (§6.7, §7.7). Master content stays
-  out of Git, fixtures and review material; fixtures are synthetic. Whether
-  a local cache is permitted is a maintainer decision.
+- **G-R1:** keep three questions separate:
+  - *Technical caching guidance:* [Toss] recommends "하루 1회 조회 후 로컬
+    캐싱" (§6.6). That is an operational recommendation for the API user,
+    not a grant of rights.
+  - *Retention permitted by terms:* no source found states how long or in
+    what form master content may be stored.
+  - *Third-party redistribution:* no source grants it, and [Toss] and
+    [Meritz] FAQs restrict distribution (§6.7, §7.7). It must not be
+    inferred from any caching guidance.
+
+  Master content stays out of Git, fixtures and review material; fixtures
+  are synthetic. Whether a local cache is offered is a maintainer
+  decision.
 - **G-R2:** [Kiwoom] W6 forbids copying and distributing its software and
   documentation without consent. Do not vendor its spec JSON, postman
   collection or examples.
