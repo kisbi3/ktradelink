@@ -30,6 +30,8 @@ from ktradelink._https_transport import (
 from ktradelink._request_plan import plan_ticker_request
 
 SECRET_VALUES = ("SYNTHETIC_PRICE_72000", "SYNTH-NAME", "SYNTHETIC_TOKEN")
+KNOWN = frozenset(("rsp_cd", "rsp_msg", "t1102OutBlock", "price", "rate", "volume", "diff",
+                   "hname", "empty", "flag", "none", "rows", "a", "b"))
 
 
 def test_shape_lists_paths_and_types_without_values():
@@ -39,7 +41,7 @@ def test_shape_lists_paths_and_types_without_values():
                           "hname": "SYNTH-NAME", "empty": "", "flag": True, "none": None},
         "rows": [{"a": 1}, {"a": "x", "b": "SYNTHETIC_PRICE_72000"}],
     }).encode()
-    shape = json_shape(body)
+    shape = json_shape(body, known_keys=KNOWN)
     assert shape == tuple(sorted(shape))
     assert set(shape) == {
         "$: object", "rsp_cd: string:digits", "rsp_msg: string:text",
@@ -55,9 +57,22 @@ def test_shape_lists_paths_and_types_without_values():
     assert "72000" not in text and "-1.5" not in text
 
 
-def test_unexpected_keys_are_masked():
-    shape = json_shape(json.dumps({"SYNTHETIC KEY=VALUE": 1, "x" * 65: 2}).encode())
-    assert shape == ("$: object", "<key>: integer")
+def test_keys_outside_the_allowlist_are_masked():
+    # ChatGPT review of PR #27, H1-B: a well-formed key can itself be a secret.
+    body = json.dumps({"SYNTHETIC_APP_SECRET": "x", "SYNTHETIC KEY=VALUE": 1,
+                       "price": {"SYNTHETIC_NESTED_KEY": 2}}).encode()
+    shape = json_shape(body, known_keys=frozenset(("price",)))
+    assert shape == ("$: object", "<key>: integer", "<key>: string:text",
+                     "price.<key>: integer", "price: object")
+    assert json_shape(body, known_keys=frozenset()) == (
+        "$: object", "<key>.<key>: integer", "<key>: integer", "<key>: object",
+        "<key>: string:text")
+
+
+@pytest.mark.parametrize("known", [None, {"price"}, ("price",), ["price"]])
+def test_an_allowlist_frozenset_is_required(known):
+    with pytest.raises(TypeError):
+        json_shape(b"{}", known_keys=known)
 
 
 @pytest.mark.parametrize("body,expected", [
@@ -67,7 +82,7 @@ def test_unexpected_keys_are_masked():
     ("not bytes", "<body is not bytes>"),
 ])
 def test_unparseable_bodies_are_reported_without_content(body, expected):
-    assert json_shape(body) == (expected,)
+    assert json_shape(body, known_keys=KNOWN) == (expected,)
     assert gateway_status(body) is None
 
 
@@ -77,8 +92,10 @@ def test_shape_is_bounded_in_depth_and_lines():
     for _ in range(20):
         node["n"] = {}
         node = node["n"]
-    assert any(line.endswith("<depth limit>") for line in json_shape(json.dumps(deep).encode()))
-    wide = json_shape(json.dumps({f"k{n}": n for n in range(500)}).encode())
+    shape = json_shape(json.dumps(deep).encode(), known_keys=frozenset(("n",)))
+    assert any(line.endswith("<depth limit>") for line in shape)
+    wide = json_shape(json.dumps({f"k{n}": f"{n}" * (n % 7) for n in range(500)}).encode(),
+                      known_keys=frozenset(f"k{n}" for n in range(500)))
     assert len(wide) == MAX_SHAPE_LINES + 1 and wide[-1] == "<more fields omitted>"
 
 
@@ -107,6 +124,23 @@ def test_gateway_status_reads_only_the_fixed_envelope_and_redacts():
 ])
 def test_gateway_status_variants(payload, expected):
     assert gateway_status(json.dumps(payload).encode()) == expected
+
+
+@pytest.mark.parametrize("field", ["rsp_cd", "error"])
+@pytest.mark.parametrize("code", ["SYNTHETIC_APP_KEY", "synthetic_app_key", "X-SYNTHETIC_APP_KEY"])
+def test_a_code_containing_a_secret_is_redacted(field, code):
+    # ChatGPT review of PR #27, H1-A: the code is upstream text as well.
+    status = gateway_status(json.dumps({field: code}).encode(), redact=["SYNTHETIC_APP_KEY"])
+    assert status.code == REDACTED
+
+
+@pytest.mark.parametrize("secret", ["abc", "Z", "SyNtH"])
+def test_secrets_of_any_length_are_redacted_case_insensitively(secret):
+    # ChatGPT review of PR #27, H1-C: no minimum redaction length.
+    body = json.dumps({"rsp_cd": f"E{secret}1", "rsp_msg": f"bad {secret.upper()} x"}).encode()
+    status = gateway_status(body, redact=[secret])
+    assert status.code == REDACTED
+    assert secret.casefold() not in status.message.casefold().replace(REDACTED, "")
 
 
 def test_gateway_message_is_truncated_and_cannot_reassemble_a_secret():

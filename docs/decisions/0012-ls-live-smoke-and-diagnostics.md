@@ -33,29 +33,44 @@ had to be solved:
      the native decoder is installed.
    - **Live run:** `--live` also requires typing `send`; `--yes` skips that
      prompt.
+   - **Decoder preflight:** before `--live` sends anything, the tool decodes a
+     synthetic t1102 payload with the installed native module and checks the
+     result. A version check alone let an old or partial build through
+     (ChatGPT review of PR #27, M2).
    - **Credentials:** read from `KTRADELINK_LS_APP_KEY` /
      `KTRADELINK_LS_APP_SECRET`, or from a hidden `getpass` prompt. There is
      no command-line option for them, because shell history and process
-     lists would keep them.
+     lists would keep them. A key or secret shorter than 8 characters is
+     refused before sending. That is a library threshold, not an LS rule:
+     shorter strings cannot be redacted reliably.
    - **Output:**
-     - Every printed line is meant to be shareable. Success prints symbol,
-       last price and volume.
-     - Failure prints the static kind, the delivery state, the redacted
-       gateway status (item 2) and the value-free shape (item 3).
+     - The token, credentials, header values and raw body are never printed.
+     - Success prints symbol, last price and volume. That is LS market data,
+       and the tool says so: its redistribution terms are not established.
+     - Failure prints the static kind, the delivery state, the gateway code
+       with credentials redacted (item 2), and the value-free shape (item 3).
+     - The gateway **message** is hidden unless `--show-gateway-message` is
+       given, and then it is labelled as upstream text to review before
+       sharing.
      - Decoder errors print only the Rust decoder's `<field>: <Kind>` text.
        Any other exception prints only its class name.
-     - The token, credentials, header values and raw body are never printed.
+     - The output is **not** claimed to be safe to share unreviewed (ChatGPT
+       review of PR #27, H1).
 2. **`HttpsTransport(collect_diagnostics=True)`** (default off)
    - For an HTTP error status, the transport reads the error body within the
      usual 1 MiB bound. It extracts a `GatewayStatus` into
      `TransportError.diagnostic` and then discards the body.
    - `GatewayStatus` takes only the root `rsp_cd` or `error` as the code, and
      `rsp_msg` or `error_description` as the message:
+     - Redaction covers the app key, the secret and (for quotes) the bearer
+       token. It is case-insensitive and has no minimum length.
      - The code must match `[A-Za-z0-9_.-]{1,32}`, otherwise it becomes
-       `<invalid code>`.
-     - In the message, the app key, the secret and (for quotes) the bearer
-       token are replaced with `<redacted>`. Non-printable characters become
-       `?`. It is cut at 200 characters, then redacted again.
+       `<invalid code>`. A code that contains any secret becomes
+       `<redacted>`.
+     - In the message, each secret is replaced with `<redacted>`.
+       Non-printable characters become `?`. It is cut at 200 characters, then
+       redacted again. If a secret still appears, the whole message becomes
+       `<redacted>`.
    - The diagnostic never appears in `str`/`repr` of the error, and the
      error's `__context__` stays empty.
    - **This partly relaxes "errors never reflect the upstream body"**
@@ -68,9 +83,17 @@ had to be solved:
    - Prints sorted `path: type` lines and never a value.
    - Types: `object`, `array`, `integer`, `number`, `boolean`, `null`, and
      strings classed as `string:empty|digits|decimal|text`.
-   - Keys outside `[A-Za-z0-9_]{1,64}` print as `<key>`. Arrays are
-     summarised from their first 20 elements.
-   - Depth is capped at 8 and output at 200 lines.
+   - It takes a required allowlist of **documented field names**; every
+     other key prints as `<key>`. A key name is upstream text too, and a
+     syntax check alone let a secret-shaped key through (H1).
+   - The tool's allowlists are:
+     - quote: the 166 `t1102OutBlock` fields from the LS t1102 REST detail
+       (sha256 `42712ce969a8a480…`), plus `t1102OutBlock`;
+     - token: the token REST detail's table and example fields (sha256
+       `4acff92cdcdfd551…`);
+     - both: the envelope keys from item 2.
+   - Arrays are summarised from their first 20 elements. Depth is capped at
+     8 and output at 200 lines.
 
 ## Consequences and limits
 
@@ -79,9 +102,10 @@ had to be solved:
   token shape, an undecodable quote and a connect failure. It uses mocked
   HTTPS and checks that no synthetic secret appears in the output.
   `tests/test_diagnostics.py` covers the helpers and the transport opt-in.
-- **Gateway messages:** a gateway message is upstream text. Redaction covers
-  only the values the tool knows (key, secret, token). Read a message before
-  sharing it.
+- **Gateway messages and codes:** both are upstream text. Redaction removes
+  only the values the tool knows (key, secret, token). It cannot prove that
+  nothing else confidential is present. That is why the message is opt-in,
+  and why output should be read before it is shared.
 - **Token lifetime:** each live run issues a new token. It stays valid at LS
   until it expires: there is no revoke call, because no LS revoke contract
   is pinned. Whether a re-issue invalidates the previous token is

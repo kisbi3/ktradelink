@@ -1,10 +1,18 @@
 """Private, value-free response diagnostics for an opt-in live smoke check.
 
-Two helpers, both built to be safe to print and share:
+Two helpers that never return credentials, tokens or response values they
+were told about:
 
-- ``json_shape`` lists field paths and JSON types, never values.
-- ``gateway_status`` extracts a short, sanitised status code and message from
-  a small fixed set of envelope keys, with caller-supplied secrets redacted.
+- ``json_shape`` lists field paths and JSON types, never values. Only keys in
+  a caller-supplied allowlist of documented field names are shown; every
+  other key is masked, because an upstream key name is upstream text too.
+- ``gateway_status`` extracts a short status code and message from a small
+  fixed set of envelope keys. Every caller-supplied secret is redacted from
+  both, case-insensitively and whatever its length.
+
+The message is still arbitrary upstream text: redaction removes only the
+secrets it was given, so it cannot prove the message holds nothing else
+confidential.
 
 Neither is evidence of what a broker actually returns. Field names extracted
 here are generic: ``rsp_cd``/``rsp_msg`` are the LS t1102 envelope (ADR 0010),
@@ -72,13 +80,16 @@ def _scalar(value: object) -> str:
     return "unknown"
 
 
-def json_shape(body: bytes) -> tuple[str, ...]:
+def json_shape(body: bytes, *, known_keys: frozenset[str]) -> tuple[str, ...]:
     """Sorted ``path: type`` lines for a JSON body, without any value.
 
-    Object keys outside ``[A-Za-z0-9_]{1,64}`` are shown as ``<key>`` so an
-    unexpected key cannot carry a value. Arrays are summarised as ``path[]``
-    from their first elements. Depth and line count are bounded.
+    Only object keys listed in ``known_keys`` (documented field names) are
+    shown; every other key is shown as ``<key>``, so an unexpected key cannot
+    carry a secret or a value. Arrays are summarised as ``path[]`` from their
+    first elements. Depth and line count are bounded.
     """
+    if type(known_keys) is not frozenset:
+        raise TypeError("known_keys must be a frozenset of documented field names")
     payload, problem = _parse(body)
     if problem is not None:
         return (problem,)
@@ -93,7 +104,7 @@ def json_shape(body: bytes) -> tuple[str, ...]:
         elif type(value) is dict:
             lines.add(f"{label}: object")
             for key, child in value.items():
-                name = key if _SAFE_KEY.fullmatch(key) else "<key>"
+                name = key if key in known_keys and _SAFE_KEY.fullmatch(key) else "<key>"
                 walk(child, f"{path}.{name}" if path else name, depth + 1)
         elif type(value) is list:
             lines.add(f"{label}: array")
@@ -117,14 +128,27 @@ class GatewayStatus:
     message: str | None
 
 
-def _code(value: object) -> str | None:
+def _redact(text: str, secrets: tuple[str, ...]) -> str:
+    for secret in secrets:  # longest first, case-insensitive
+        text = re.sub(re.escape(secret), REDACTED, text, flags=re.IGNORECASE)
+    return text
+
+
+def _contains_secret(text: str, secrets: tuple[str, ...]) -> bool:
+    folded = text.casefold()
+    return any(secret.casefold() in folded for secret in secrets)
+
+
+def _code(value: object, secrets: tuple[str, ...]) -> str | None:
     if value is None:
         return None
     if type(value) is int:  # bool is excluded: type(True) is bool
         value = str(value)
-    if type(value) is str and _SAFE_CODE.fullmatch(value):
-        return value
-    return "<invalid code>"
+    if type(value) is not str or not _SAFE_CODE.fullmatch(value):
+        return "<invalid code>"
+    if _contains_secret(value, secrets):
+        return REDACTED
+    return value
 
 
 def _message(value: object, secrets: tuple[str, ...]) -> str | None:
@@ -132,14 +156,13 @@ def _message(value: object, secrets: tuple[str, ...]) -> str | None:
         return None
     if type(value) is not str:
         return "<invalid message>"
-    for secret in secrets:
-        value = value.replace(secret, REDACTED)
-    cleaned = "".join(char if char.isprintable() else "?" for char in value)
+    cleaned = "".join(char if char.isprintable() else "?" for char in _redact(value, secrets))
     if len(cleaned) > MAX_MESSAGE_CHARS:
         cleaned = cleaned[:MAX_MESSAGE_CHARS] + "…"
-    # Redact again: truncation or replacement must not reassemble a secret.
-    for secret in secrets:
-        cleaned = cleaned.replace(secret, REDACTED)
+    # Redact again: replacement or truncation must not reassemble a secret.
+    cleaned = _redact(cleaned, secrets)
+    if _contains_secret(cleaned, secrets):
+        return REDACTED
     return cleaned
 
 
@@ -147,11 +170,13 @@ def gateway_status(body: bytes, *, redact: Iterable[str] = ()) -> GatewayStatus 
     """Return the root-level status envelope, or ``None`` if there is none.
 
     Only ``rsp_cd``/``error`` (code) and ``rsp_msg``/``error_description``
-    (message) are read. Each string in ``redact`` (credentials, tokens) is
-    replaced in the message; strings shorter than 4 characters are ignored so
-    redaction cannot shred ordinary text.
+    (message) are read. Every non-empty string in ``redact`` (credentials,
+    tokens) is removed case-insensitively from both, whatever its length: a
+    code containing one becomes ``<redacted>``, and in the message each
+    occurrence is replaced. Very short secrets therefore shred ordinary text;
+    callers that print the result should refuse such credentials up front.
     """
-    secrets = tuple(sorted({s for s in redact if type(s) is str and len(s) >= 4},
+    secrets = tuple(sorted({s for s in redact if type(s) is str and s},
                            key=len, reverse=True))
     payload, problem = _parse(body)
     if problem is not None or type(payload) is not dict:
@@ -161,6 +186,6 @@ def gateway_status(body: bytes, *, redact: Iterable[str] = ()) -> GatewayStatus 
     if code_key is None and message_key is None:
         return None
     return GatewayStatus(
-        _code(payload.get(code_key)) if code_key else None,
+        _code(payload.get(code_key), secrets) if code_key else None,
         _message(payload.get(message_key), secrets) if message_key else None,
     )

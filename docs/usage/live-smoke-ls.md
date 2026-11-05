@@ -1,8 +1,8 @@
 # LS live smoke check (opt-in, your own machine only)
 
 `tools/live_smoke_ls.py` makes the first contact with the real LS gateway. It
-sends **one token request and one t1102 quote**, prints a shareable result and
-exits. It never places orders, reads accounts, retries or stores anything.
+sends **one token request and one t1102 quote**, prints a result that never
+contains your credentials or token, and exits. It never places orders, reads accounts, retries or stores anything.
 CI never runs it. See ADR 0012 for the design.
 
 ## Before you start
@@ -61,16 +61,24 @@ Type `send` when asked. The tool prompts for the key and secret if
 
 ## What it prints and what to share
 
-- **Success:** `[2/2 quote] OK: 005930 last=… volume=…`.
-- **Failure:** the step, a static kind such as `http_unauthorized`, the
-  delivery state, and, when the gateway sent one, its status code and
-  message with your key, secret and token replaced by `<redacted>`.
-- **Unexpected shape:** field paths and types only, for example
-  `t1102OutBlock.price: string:digits`. Values are never printed.
+The tool never prints your key, secret or token, a raw response body or a
+header value. Even so, **read the output before sharing it**:
 
-The output is designed to be pasted into an Issue or a review. Still, read
-the gateway message before sharing it: it is upstream text, and only your
-key, secret and token are redacted from it.
+- **Success:** `[2/2 quote] OK: 005930 last=… volume=…`. This is LS market
+  data. Check LS's terms before posting it anywhere public.
+- **Failure:** the step, a static kind such as `http_unauthorized`, the
+  delivery state, and the gateway's status code. If the code contains your
+  key, secret or token, it prints as `<redacted>`.
+- **Gateway message:** hidden by default. `--show-gateway-message` prints it
+  with your key, secret and token redacted. It is still arbitrary upstream
+  text and may contain other details you would not want to share.
+- **Unexpected shape:** field paths and types only, for example
+  `t1102OutBlock.price: string:digits`. Only field names documented by LS
+  are printed; any other key prints as `<key>`.
+
+A key or secret shorter than 8 characters is refused, because it could not
+be reliably redacted from output. Before `--live` sends anything, the tool
+also checks that the native decoder can decode a synthetic t1102 response.
 
 ## Things to know
 
