@@ -163,6 +163,74 @@ def test_ordering_does_not_cross_a_credential_rotation(receive_token_response):
         assert caught.value.kind is TokenFailure.STALE_CREDENTIAL
 
 
+def _ls_body(lifetime_s):
+    return json.dumps({"access_token": f"SYNTHETIC_LS_{lifetime_s}", "scope": "oob",
+                       "token_type": "Bearer", "expires_in": lifetime_s}).encode()
+
+
+def test_older_send_stays_out_after_the_newer_lease_expires(receive_token_response):
+    # ChatGPT review of PR #26, M1: the order record must outlive the lease.
+    identity, provider = _setup()
+    older = receive_token_response(build_token_request(identity, provider), _ls_body(86400),
+                                   clock=(1_000, 1_000))
+    newer = receive_token_response(build_token_request(identity, provider), _ls_body(1),
+                                   clock=(1_000, 1_000))
+    cache = InMemoryTokenCache()
+    save_example_token_response(newer, identity, provider, cache, now_ms=1_000)
+    _assert_cache_empty_at(cache, provider, identity, 2_000)  # evicts the newer lease
+    with pytest.raises(TokenError) as caught:
+        save_example_token_response(older, identity, provider, cache, now_ms=2_001)
+    assert caught.value.kind is TokenFailure.SUPERSEDED
+    _assert_cache_empty_at(cache, provider, identity, 2_001)
+
+
+def test_revoke_blocks_replay_until_a_new_send(receive_token_response):
+    identity, provider, first, second = _two_sequential_responses(receive_token_response)
+    cache = InMemoryTokenCache()
+    save_example_token_response(second, identity, provider, cache, now_ms=0)
+    cache.revoke(provider, identity)
+    for replay in (second, first):  # the revoked response itself, and an older one
+        with pytest.raises(TokenError) as caught:
+            save_example_token_response(replay, identity, provider, cache, now_ms=0)
+        assert caught.value.kind is TokenFailure.SUPERSEDED
+    _assert_cache_empty(cache, provider, identity)
+    fresh = receive_token_response(build_token_request(identity, provider), LS_BODY)
+    lease = save_example_token_response(fresh, identity, provider, cache, now_ms=0)
+    assert cache.get(provider, identity, now_ms=0) is lease
+
+
+def test_a_manual_lease_does_not_reset_send_order(receive_token_response):
+    identity, provider, first, second = _two_sequential_responses(receive_token_response)
+    cache = InMemoryTokenCache()
+    save_example_token_response(second, identity, provider, cache, now_ms=0)
+    cache.revoke(provider, identity)
+    cache.put(provider, provider.load(identity), access_token="SYNTHETIC_MANUAL",
+              expires_at_ms=10_000, now_ms=0)
+    with pytest.raises(TokenError) as caught:
+        save_example_token_response(first, identity, provider, cache, now_ms=0)
+    assert caught.value.kind is TokenFailure.SUPERSEDED
+
+
+def test_rotation_keeps_old_responses_out_and_lets_new_sends_in(receive_token_response):
+    identity, provider, first, second = _two_sequential_responses(receive_token_response)
+    cache = InMemoryTokenCache()
+    save_example_token_response(second, identity, provider, cache, now_ms=0)
+    provider.put(identity, CredentialPair("ROTATED_KEY", "ROTATED_SECRET"))
+    for old in (first, second):
+        with pytest.raises(TokenError) as caught:
+            save_example_token_response(old, identity, provider, cache, now_ms=0)
+        assert caught.value.kind is TokenFailure.STALE_CREDENTIAL
+    rotated = receive_token_response(build_token_request(identity, provider), LS_BODY)
+    lease = save_example_token_response(rotated, identity, provider, cache, now_ms=0)
+    assert cache.get(provider, identity, now_ms=0) is lease
+
+
+def _assert_cache_empty_at(cache, provider, identity, now_ms):
+    with pytest.raises(CredentialError) as missing:
+        cache.get(provider, identity, now_ms=now_ms)
+    assert missing.value.kind is CredentialFailure.TOKEN_MISSING
+
+
 @pytest.mark.parametrize("sequence", [0, -1, True, 1.0, "1"])
 def test_issue_sequence_must_be_a_positive_int(sequence):
     identity, provider = _setup()

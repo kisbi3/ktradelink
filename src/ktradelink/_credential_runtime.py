@@ -177,15 +177,23 @@ class BearerLease:
 class InMemoryTokenCache:
     """Strict broker/environment/profile/provider/revision binding; no refresh.
 
-    A lease from a later attested token send is never replaced by one from an
-    earlier send, so a slow, out-of-order exchange cannot reinstate an older
-    token. Lock order is always provider, then cache.
+    Send order is kept as a per-(provider, identity) high-watermark that
+    outlives the lease itself, so expiry eviction and ``revoke`` do not reset
+    it. An attested save is refused (``SUPERSEDED``) when an equal-or-later
+    send was already saved, except for re-saving the very lease that is
+    still cached. A response from an earlier send therefore can never be
+    reinstated, not even after the newer token expired or was revoked. The
+    watermark spans credential revisions: sequences are process-wide and
+    assigned when a send starts, and a send for a newer revision can only
+    start after the rotation, so it always carries a higher sequence. Lock
+    order is always provider, then cache.
     """
 
-    __slots__ = ("_entries", "_lock")
+    __slots__ = ("_entries", "_high_water", "_lock")
 
     def __init__(self) -> None:
         self._entries: dict[tuple[InMemoryCredentialProvider, CredentialIdentity], BearerLease] = {}
+        self._high_water: dict[tuple[InMemoryCredentialProvider, CredentialIdentity], int] = {}
         self._lock = threading.Lock()
 
     def put(
@@ -205,12 +213,19 @@ class InMemoryTokenCache:
             lease = BearerLease(snapshot, access_token, expires_at_ms, issue_sequence)
             cache_key = (provider, snapshot.identity)
             with self._lock:
-                existing = self._entries.get(cache_key)
-                if (issue_sequence is not None and existing is not None
-                        and existing.snapshot is snapshot
-                        and existing.issue_sequence is not None
-                        and existing.issue_sequence > issue_sequence):
-                    raise CredentialError(CredentialFailure.SUPERSEDED)
+                if issue_sequence is not None:
+                    high_water = self._high_water.get(cache_key)
+                    if high_water is not None:
+                        existing = self._entries.get(cache_key)
+                        same_live_lease = (
+                            issue_sequence == high_water and existing is not None
+                            and existing.issue_sequence == issue_sequence
+                            and existing.snapshot is snapshot
+                        )
+                        if issue_sequence < high_water or (
+                                issue_sequence == high_water and not same_live_lease):
+                            raise CredentialError(CredentialFailure.SUPERSEDED)
+                    self._high_water[cache_key] = issue_sequence
                 self._entries[cache_key] = lease
         return lease
 
@@ -239,6 +254,9 @@ class InMemoryTokenCache:
         return lease
 
     def revoke(self, provider: InMemoryCredentialProvider, identity: CredentialIdentity) -> None:
+        """Drop the lease. The send-order watermark stays, so a response from
+        the revoked or any earlier send cannot be saved again; only a new
+        token send can repopulate the cache."""
         if type(provider) is not InMemoryCredentialProvider or type(identity) is not CredentialIdentity:
             raise CredentialError(CredentialFailure.INVALID)
         with self._lock:
