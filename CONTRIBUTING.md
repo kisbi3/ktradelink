@@ -11,7 +11,9 @@ Thank you for helping unify Korean securities broker APIs.
    equivalent cloud environment.
 5. Open a PR that describes the behavior, tests, official broker-doc evidence,
    and changes to the capability matrix.
-6. Obtain independent review for broker-specific parsing and all order paths.
+6. Obtain an independent review verdict from someone other than the author,
+   pinned to the exact HEAD, for every PR (see [AGENTS.md](AGENTS.md)).
+   Broker-specific parsing and all order paths need particular scrutiny.
 7. The maintainer merges after CI and reviews pass; preserve atomic commits.
 
 Use Conventional Commits:
