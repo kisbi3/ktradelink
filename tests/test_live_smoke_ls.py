@@ -19,7 +19,7 @@ import pytest
 
 from ktradelink import _native
 
-TOOL =Path(__file__).resolve().parents[1] / "tools" / "live_smoke_ls.py"
+TOOL = Path(__file__).resolve().parents[1] / "tools" / "live_smoke_ls.py"
 KEY, SECRET, TOKEN = "SYNTHETIC_APP_KEY", "SYNTHETIC_APP_SECRET", "SYNTHETIC_BEARER"
 ENV = {"KTRADELINK_LS_APP_KEY": KEY, "KTRADELINK_LS_APP_SECRET": SECRET}
 TOKEN_BODY = json.dumps({"access_token": TOKEN, "scope": "oob", "token_type": "Bearer",
