@@ -4,7 +4,7 @@ import http.client
 import json
 import ssl
 from dataclasses import replace
-from datetime import timedelta, timezone
+from datetime import UTC, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -256,7 +256,7 @@ def test_kis_naive_expiry_does_not_silently_assume_kst():
     assert caught.value.kind is TokenFailure.EVIDENCE_MISSING
     # The offset is explicit synthetic fixture context, not broker verification.
     utc = save_example_token_response(response, identity, provider, cache, now_ms=0,
-                                     kis_expiry_timezone=timezone.utc)
+                                     kis_expiry_timezone=UTC)
     kst = save_example_token_response(response, identity, provider, cache, now_ms=0,
                                      kis_expiry_timezone=timezone(timedelta(hours=9)))
     assert utc.expires_at_ms - kst.expires_at_ms == 9 * 60 * 60 * 1000
@@ -279,5 +279,5 @@ def test_kiwoom_expiry_source_cannot_be_overridden_by_kis_offset():
                             json.dumps(token_fields("kiwoom")).encode())
     with pytest.raises(TokenError) as caught:
         save_example_token_response(response, identity, provider, cache, now_ms=0,
-                                    kis_expiry_timezone=timezone.utc)
+                                    kis_expiry_timezone=UTC)
     assert caught.value.kind is TokenFailure.INVALID_RESPONSE
