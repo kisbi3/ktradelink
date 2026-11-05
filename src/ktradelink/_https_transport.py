@@ -1,7 +1,8 @@
 """Private, explicit opt-in HTTPS wire transport; no automatic broker access.
 
-This module can assemble KIS/Kiwoom/LS *candidate* token/quote requests from
-publisher evidence, but actual broker contract/provenance is NOT verified.
+This module can assemble KIS/Kiwoom/LS/DB *candidate* token/quote requests
+from publisher evidence, but actual broker contract/provenance is NOT verified.
+Meritz stays blocked.
 Network I/O is disabled by default and never exercised in CI. No redirects,
 proxies, retries, account calls or orders. Not a public fetch_ticker adapter.
 """
@@ -85,7 +86,8 @@ def _reject(kind: TransportFailure, delivery: DeliveryState = DeliveryState.NOT_
     raise TransportError(kind, delivery)
 
 
-_SUPPORTED_CANDIDATES = frozenset(("kis", "kiwoom", "ls"))
+# Meritz stays out: every Meritz error is HTTP 500 and its quote needs a MAC.
+_SUPPORTED_CANDIDATES = frozenset(("kis", "kiwoom", "ls", "db"))
 
 
 def _token_wire(
@@ -94,8 +96,10 @@ def _token_wire(
     """The one canonical token body/header shape per evidenced broker.
 
     KIS/Kiwoom: JSON from their pinned publisher samples. LS: form body from
-    its API guide token detail (``scope=oob``; TLS verification is never
-    disabled). DB's URL-query sample and every other broker fail closed.
+    its API guide token detail. DB: the same form fields, from its API guide
+    token detail and the official SDK at 564b5100 (ADR 0015); the testbed's
+    URL-query sample is never built. TLS verification is never disabled.
+    Every other broker fails closed.
     """
     key_name, secret_name = auth.credential_field_names
     if auth.broker in ("kis", "kiwoom") and auth.token_request_format == "json":
@@ -105,7 +109,8 @@ def _token_wire(
             secret_name: pair.client_secret,
         }, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
         return body, (("content-type", "application/json;charset=UTF-8"),)
-    if auth.broker == "ls" and auth.token_request_format == "form" and auth.scope == "oob":
+    if (auth.broker in ("ls", "db") and auth.token_request_format == "form"
+            and auth.scope == "oob"):
         body = urlencode((
             ("grant_type", "client_credentials"),
             (key_name, pair.client_key),
@@ -278,15 +283,15 @@ def _candidate_broker(identity: CredentialIdentity) -> None:
 def build_token_request(
     identity: CredentialIdentity, provider: InMemoryCredentialProvider,
 ) -> WireRequest:
-    """KIS/Kiwoom/LS candidate token POST from publisher evidence, no sending."""
+    """Candidate token POST from publisher evidence, no sending."""
     if type(identity) is not CredentialIdentity or type(provider) is not InMemoryCredentialProvider:
         _reject(TransportFailure.INVALID_REQUEST)
     _candidate_broker(identity)
     creds = provider.load(identity)
     provider.require_current(creds)
     auth = authentication_requirements(identity.broker, environment=identity.environment)
-    # Never clone DB's unsafe URL credential example or infer other brokers'
-    # token body semantics: _token_wire fails closed for them.
+    # Never clone DB's unsafe URL credential testbed example or infer other
+    # brokers' token body semantics: _token_wire fails closed for them.
     body, headers = _token_wire(auth, creds.pair)
     return WireRequest(
         auth, "POST", auth.token_origin, auth.token_path, (), headers, body, "token",

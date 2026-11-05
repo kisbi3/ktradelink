@@ -46,7 +46,7 @@ def test_token_request_is_publisher_example_json_not_query(broker):
     assert req.path==("/oauth2/tokenP" if broker=="kis" else "/oauth2/token")
 
 
-@pytest.mark.parametrize("broker",("db","toss","meritz"))
+@pytest.mark.parametrize("broker",("toss","meritz"))
 def test_brokers_with_unverified_token_wire_format_fail_closed(broker):
     p,ident,_=setup(broker)
     with pytest.raises(TransportError) as ex:
