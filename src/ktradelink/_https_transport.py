@@ -309,6 +309,13 @@ def _http_kind(status: int) -> TransportFailure | None:
     return TransportFailure.HTTP
 
 
+def _wall_clock_ms() -> int:
+    """The only send-time clock. Tests may monkeypatch this module function;
+    there is deliberately no constructor or per-call clock parameter, so a
+    network-enabled sender cannot be handed a frozen or rolled-back time."""
+    return time.time_ns() // 1_000_000
+
+
 def _binding_failure(request: WireRequest, now_ms: int) -> TransportFailure | None:
     snapshot = request.credential_snapshot
     provider = snapshot.owner
@@ -332,6 +339,10 @@ class HttpsTransport:
     Uses http.client directly: it does not read HTTP(S)_PROXY, copy environment
     credentials, follow redirects, keep a cookie jar or reuse connections.
     Never call with real keys without the maintainer's separate live approval.
+
+    Token expiry is always checked against the real UTC clock, read before
+    connecting and again after the TLS handshake. No caller-supplied clock is
+    accepted (follow-up to the ChatGPT review of PR #24).
     """
 
     __slots__ = ("_enabled", "_timeout_ms")
@@ -343,10 +354,20 @@ class HttpsTransport:
         self._enabled = network_enabled
         self._timeout_ms = timeout_ms
 
+    @staticmethod
+    def _now_ms() -> int | None:
+        try:
+            value = _wall_clock_ms()  # looked up at call time
+        except Exception:
+            return None
+        if type(value) is not int or value < 0:
+            return None
+        return value
+
     def __repr__(self) -> str:
         return "HttpsTransport(<redacted>)"
 
-    def send(self, request: WireRequest, *, now_ms: int | None = None) -> WireResponse:
+    def send(self, request: WireRequest) -> WireResponse:
         """One HTTPS attempt; no reconnect, refresh, retry, or downstream decode."""
         if type(request) is not WireRequest:
             _reject(TransportFailure.INVALID_REQUEST)
@@ -354,10 +375,8 @@ class HttpsTransport:
         request.__post_init__()
         if not self._enabled:
             _reject(TransportFailure.NOT_ENABLED)
-        injected_clock = now_ms is not None
+        now_ms = self._now_ms()
         if now_ms is None:
-            now_ms = time.time_ns() // 1_000_000
-        if type(now_ms) is not int or now_ms < 0:
             _reject(TransportFailure.INVALID_REQUEST)
         binding_failure = _binding_failure(request, now_ms)
         if binding_failure is not None:
@@ -394,8 +413,11 @@ class HttpsTransport:
 
             if failure is None:
                 # A slow handshake must not make a revoked/expired lease usable.
-                before_write_ms = now_ms if injected_clock else time.time_ns() // 1_000_000
-                failure = _binding_failure(request, before_write_ms)
+                before_write_ms = self._now_ms()
+                if before_write_ms is None:
+                    failure = TransportFailure.INVALID_REQUEST
+                else:
+                    failure = _binding_failure(request, before_write_ms)
             if failure is None:
                 state = DeliveryState.UNKNOWN  # any write failure may be partial
                 try:
@@ -423,10 +445,17 @@ class HttpsTransport:
             if failure is None:
                 try:
                     response_body = response.read(MAX_RESPONSE_BYTES + 1)
+                    # read(amt) does not raise IncompleteRead when the peer
+                    # closes before the declared Content-Length; http.client
+                    # leaves the unread remainder in ``length`` (None when the
+                    # body is chunked or close-delimited).
+                    remaining = getattr(response, "length", None)
                     if type(response_body) is not bytes:
                         failure = TransportFailure.READ
                     elif len(response_body) > MAX_RESPONSE_BYTES:
                         failure = TransportFailure.OVERSIZED
+                    elif remaining is not None and (type(remaining) is not int or remaining != 0):
+                        failure = TransportFailure.READ
                 except Exception:
                     failure = TransportFailure.READ
         finally:
