@@ -1,4 +1,4 @@
-"""Private KIS/Kiwoom publisher-example token parsing, without network I/O.
+"""Private KIS/Kiwoom/LS publisher-evidence token parsing, without network I/O.
 
 No automatic token issuance or refresh, and no unsupported broker extrapolation.
 Errors never reflect the upstream body. Parser success is NOT live validation.
@@ -24,6 +24,8 @@ from ktradelink._https_transport import (
 from ktradelink._request_plan import AuthRequirements
 
 KST = timezone(timedelta(hours=9))
+# Library sanity bound, NOT a publisher limit: the LS example shows 86400 s.
+MAX_RELATIVE_LIFETIME_S = 7 * 24 * 60 * 60
 
 
 class TokenFailure(Enum):
@@ -50,6 +52,9 @@ def save_example_token_response(
     Uses publisher example expiration fields, not an inferred TTL. KIS's
     sample has a naive timestamp: a caller must explicitly supply its fixed
     timezone interpretation; synthetic fixture context is not live evidence.
+    LS returns a relative lifetime in seconds; the lease expires that long
+    after ``now_ms``, so pass the time *before* the request was sent to avoid
+    overstating the lifetime by the round trip.
     A failed parse does not mutate the cache. Exchange-time credential rotation
     is rejected before writing the token. Future production support needs
     separately verified quote/source/status/expiry semantics.
@@ -91,6 +96,10 @@ def save_example_token_response(
     def no_nonfinite(_value: str) -> None:
         raise ValueError("non-finite JSON token")
 
+    expires = None
+    lifetime_s = None
+    date_format = None
+    expiry_text = None
     try:
         payload = json.loads(
             response.json_text, object_pairs_hook=no_duplicate_keys, parse_constant=no_nonfinite
@@ -102,7 +111,22 @@ def save_example_token_response(
         kind = payload["token_type"]
         if type(kind) is not str or kind.lower() != "bearer":
             raise ValueError("unexpected token type")
-        if identity.broker == "kis":
+        if identity.broker == "ls":
+            # LS API guide token detail: the field table says `expire_in` but
+            # the response example says `expires_in`. Accept exactly one of the
+            # two publisher spellings; never guess when both or neither appear.
+            if any(key in payload for key in ("rsp_cd", "rsp_msg")):
+                raise ValueError("gateway status envelope on token response")
+            if payload["scope"] != "oob":
+                raise ValueError("unexpected token scope")
+            access = payload["access_token"]
+            present = [key for key in ("expires_in", "expire_in") if key in payload]
+            if len(present) != 1:
+                raise ValueError("ambiguous token lifetime field")
+            lifetime_s = payload[present[0]]
+            if type(lifetime_s) is not int or not 1 <= lifetime_s <= MAX_RELATIVE_LIFETIME_S:
+                raise ValueError("invalid token lifetime")
+        elif identity.broker == "kis":
             access = payload["access_token"]
             expiry_text = payload["access_token_token_expired"]
             if type(expiry_text) is not str:
@@ -123,7 +147,7 @@ def save_example_token_response(
         if (type(access) is not str or not 1 <= len(access) <= 8192
                 or any(char in access for char in "\r\n\x00")):
             raise ValueError("invalid token")
-        if expires.strftime(date_format) != expiry_text:
+        if expires is not None and expires.strftime(date_format) != expiry_text:
             raise ValueError("ambiguous date format")
         valid = True
     except (ValueError, TypeError, KeyError, OverflowError, AttributeError,
@@ -141,10 +165,13 @@ def save_example_token_response(
         if kis_expiry_timezone is not None:
             raise TokenError(TokenFailure.INVALID_RESPONSE)
         expiry_timezone = KST  # Explicitly assigned in the pinned Kiwoom auth source.
-    try:
-        expires_at_ms = int(expires.replace(tzinfo=expiry_timezone).timestamp() * 1000)
-    except (ValueError, OverflowError, OSError):
-        expires_at_ms = -1
+    if lifetime_s is not None:
+        expires_at_ms = now_ms + lifetime_s * 1000
+    else:
+        try:
+            expires_at_ms = int(expires.replace(tzinfo=expiry_timezone).timestamp() * 1000)
+        except (ValueError, OverflowError, OSError):
+            expires_at_ms = -1
     if expires_at_ms <= now_ms:
         raise TokenError(TokenFailure.INVALID_RESPONSE)
     # Check again for rotated credentials before mutation; no automatic refresh.

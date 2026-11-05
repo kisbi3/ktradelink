@@ -1,7 +1,7 @@
 """Private, explicit opt-in HTTPS wire transport; no automatic broker access.
 
-This module can assemble KIS/Kiwoom *candidate* token/quote requests from
-publisher examples, but actual broker contract/provenance is NOT verified.
+This module can assemble KIS/Kiwoom/LS *candidate* token/quote requests from
+publisher evidence, but actual broker contract/provenance is NOT verified.
 Network I/O is disabled by default and never exercised in CI. No redirects,
 proxies, retries, account calls or orders. Not a public fetch_ticker adapter.
 """
@@ -73,7 +73,35 @@ def _reject(kind: TransportFailure, delivery: DeliveryState = DeliveryState.NOT_
     raise TransportError(kind, delivery)
 
 
-_SUPPORTED_CANDIDATES = frozenset(("kis", "kiwoom"))
+_SUPPORTED_CANDIDATES = frozenset(("kis", "kiwoom", "ls"))
+
+
+def _token_wire(
+    auth: AuthRequirements, pair: CredentialPair,
+) -> tuple[bytes, tuple[tuple[str, str], ...]]:
+    """The one canonical token body/header shape per evidenced broker.
+
+    KIS/Kiwoom: JSON from their pinned publisher samples. LS: form body from
+    its API guide token detail (``scope=oob``; TLS verification is never
+    disabled). DB's URL-query sample and every other broker fail closed.
+    """
+    key_name, secret_name = auth.credential_field_names
+    if auth.broker in ("kis", "kiwoom") and auth.token_request_format == "json":
+        body = json.dumps({
+            "grant_type": "client_credentials",
+            key_name: pair.client_key,
+            secret_name: pair.client_secret,
+        }, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+        return body, (("content-type", "application/json;charset=UTF-8"),)
+    if auth.broker == "ls" and auth.token_request_format == "form" and auth.scope == "oob":
+        body = urlencode((
+            ("grant_type", "client_credentials"),
+            (key_name, pair.client_key),
+            (secret_name, pair.client_secret),
+            ("scope", auth.scope),
+        )).encode("ascii")
+        return body, (("content-type", "application/x-www-form-urlencoded"),)
+    _reject(TransportFailure.EVIDENCE_MISSING)
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -186,13 +214,7 @@ class WireRequest:
         if self.purpose == "token":
             if self.bearer_lease is not None or self.token_cache is not None:
                 _reject(TransportFailure.INVALID_REQUEST)
-            key_name, secret_name = self.source.credential_field_names
-            expected_body = json.dumps({
-                "grant_type": "client_credentials",
-                key_name: pair.client_key,
-                secret_name: pair.client_secret,
-            }, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
-            expected_headers = (("content-type", "application/json;charset=UTF-8"),)
+            expected_body, expected_headers = _token_wire(self.source, pair)
         else:
             if (type(self.bearer_lease) is not BearerLease
                     or type(self.token_cache) is not InMemoryTokenCache
@@ -239,26 +261,18 @@ def _candidate_broker(identity: CredentialIdentity) -> None:
 def build_token_request(
     identity: CredentialIdentity, provider: InMemoryCredentialProvider,
 ) -> WireRequest:
-    """KIS/Kiwoom candidate token POST based on publisher examples, no sending."""
+    """KIS/Kiwoom/LS candidate token POST from publisher evidence, no sending."""
     if type(identity) is not CredentialIdentity or type(provider) is not InMemoryCredentialProvider:
         _reject(TransportFailure.INVALID_REQUEST)
     _candidate_broker(identity)
     creds = provider.load(identity)
     provider.require_current(creds)
     auth = authentication_requirements(identity.broker, environment=identity.environment)
-    key_name, secret_name = auth.credential_field_names
-    # Only the verified JSON sample shapes are implemented here. Never clone DB's
-    # unsafe URL credential example or infer other brokers' token body semantics.
-    if auth.token_request_format != "json":
-        _reject(TransportFailure.EVIDENCE_MISSING)
-    body = json.dumps({
-        "grant_type": "client_credentials",
-        key_name: creds.pair.client_key,
-        secret_name: creds.pair.client_secret,
-    }, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+    # Never clone DB's unsafe URL credential example or infer other brokers'
+    # token body semantics: _token_wire fails closed for them.
+    body, headers = _token_wire(auth, creds.pair)
     return WireRequest(
-        auth, "POST", auth.token_origin, auth.token_path, (),
-        (("content-type", "application/json;charset=UTF-8"),), body, "token",
+        auth, "POST", auth.token_origin, auth.token_path, (), headers, body, "token",
         credential_snapshot=creds,
     )
 
