@@ -122,7 +122,7 @@ assert result.info == {} and core_version() == "0.1.0"
 examples = {
     "kis": '{"output":{"stck_prpr":"72000","acml_vol":"0"}}',
     "kiwoom": '{"cur_prc":"72000","trde_qty":"0"}',
-    "ls": '{"price":72000}',
+    "ls": '{"rsp_cd":"00000","t1102OutBlock":{"shcode":"005930","price":72000,"volume":0}}',
     "db": '{"Out":{"Prpr":"72000"}}',
     "toss": '{"result":[{"symbol":"005930","currency":"KRW","lastPrice":"72000"}]}',
     "meritz": '{"data":{"stck_prpr":"72000","acml_vol":"0"}}',

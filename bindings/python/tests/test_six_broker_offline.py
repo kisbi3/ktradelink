@@ -17,7 +17,8 @@ SYNTHETIC = {
     "kiwoom": {"return_code": 0, "stk_cd": "005930", "cur_prc": "72000.00",
                "open_pric": "71000", "high_pric": "72500", "low_pric": "70500",
                "trde_qty": "0"},
-    "ls": {"shcode": "005930", "hname": "synthetic", "price": 72000},
+    "ls": {"rsp_cd": "00000", "t1102OutBlock": {"shcode": "005930", "hname": "synthetic",
+                                                "price": 72000, "volume": 0, "open": 0}},
     "db": {"rsp_cd": "00000", "Out": {"Prpr": "72000.00", "Oprc": "71000",
                                     "Hprc": "72500", "Lprc": "70500", "Sdpr": "70000"}},
     "toss": {"result": [{"symbol": "005930", "timestamp": "2026-03-25T09:30:00.123+09:00",
@@ -53,8 +54,11 @@ def test_six_broker_candidates_return_exact_existing_ticker(broker: str) -> None
     elif broker == "db":
         assert quote.volume is None  # DB example has NO volume field.
         assert quote.open == Decimal("71000")
+    elif broker == "ls":
+        assert quote.volume == 0
+        assert quote.open is None  # t1102 open/high/low 0-before-trade semantics unverified.
     else:
-        assert quote.volume is None  # Neither LS onboarding nor Toss PriceResponse.
+        assert quote.volume is None  # Toss PriceResponse has no volume.
         assert quote.open is None
 
 
@@ -183,7 +187,6 @@ def test_toss_string_field_error_classification(
 
 @pytest.mark.parametrize(("broker", "field", "pricefield"), [
     ("kiwoom", "stk_cd", "cur_prc"),
-    ("ls", "shcode", "price"),
 ])
 def test_optional_native_identifier_type_errors(
     broker: str, field: str, pricefield: str
@@ -197,12 +200,25 @@ def test_optional_native_identifier_type_errors(
                                 json.dumps({field: "000660", pricefield: "10"}))
 
 
-def test_ls_onboarding_price_string_and_negative_integer() -> None:
-    good = decode_ticker_candidate("ls", "005930", "KRX",
-                                   '{"shcode":"005930","price":"72000.00"}')
-    assert good.last.as_tuple() == Decimal("72000.00").as_tuple()
-    with pytest.raises(ValueError, match=r"^price: InvalidPrice$"):
-        decode_ticker_candidate("ls", "005930", "KRX", '{"shcode":"005930","price":-72000}')
+def _ls(block: dict, **root) -> str:
+    return json.dumps({"rsp_cd": "00000", "t1102OutBlock": block, **root})
+
+
+def test_ls_t1102_required_status_symbol_and_unsigned_price() -> None:
+    good = decode_ticker_candidate("ls", "005930", "KRX", _ls({"shcode": "005930", "price": 6710}))
+    assert good.last == Decimal("6710") and good.volume is None
+    cases = [
+        (json.dumps({"t1102OutBlock": {"shcode": "005930", "price": 10}}), "rsp_cd: MissingRequired"),
+        (_ls({"shcode": "005930", "price": 10}, rsp_cd="00001"), "rsp_cd: SourceStatus"),
+        ('{"rsp_cd":"00000","shcode":"005930","price":10}', "t1102OutBlock: MissingRequired"),
+        (_ls({"price": 10}), "shcode: MissingRequired"),
+        (_ls({"shcode": 5930, "price": 10}), "shcode: InvalidField"),
+        (_ls({"shcode": "000660", "price": 10}), "shcode: AmbiguousSymbol"),
+        (_ls({"shcode": "005930", "price": -72000}), "price: InvalidPrice"),
+    ]
+    for payload, message in cases:
+        with pytest.raises(ValueError, match=rf"^{message}$"):
+            decode_ticker_candidate("ls", "005930", "KRX", payload)
 
 
 def test_exact_maximum_json_bytes_and_one_byte_too_many() -> None:

@@ -27,10 +27,10 @@ EXPECTED = {
     ),
     "kiwoom": ("POST", "https://api.kiwoom.com", "/api/dostk/stkinfo", ()),
     "ls": (
-        "GET",
+        "POST",
         "https://openapi.ls-sec.co.kr:8080",
         "/stock/market-data",
-        (("shcode", "005930"),),
+        (),
     ),
     "db": (
         "POST",
@@ -79,11 +79,7 @@ def test_all_six_provider_quote_templates_have_exact_documented_shapes(
     assert plan.auth.token_exchange_implemented is False
     assert plan.origin.startswith("https://")
     assert plan.venue == "KRX"
-    assert plan.evidence_level == (
-        "publisher_onboarding_demo_only_not_t1102"
-        if broker == "ls"
-        else "publisher_quote_example"
-    )
+    assert plan.evidence_level == "publisher_quote_example"
 
 
 def test_native_quote_specific_fixed_headers_are_not_credentials() -> None:
@@ -95,7 +91,8 @@ def test_native_quote_specific_fixed_headers_are_not_credentials() -> None:
     meritz = plan_ticker_request("meritz", "005930", venue="KRX", environment="live")
     assert ("tr_id", "FHKST01010100") in kis.public_headers
     assert ("api-id", "ka10001") in kiwoom.public_headers
-    assert ("tr_id", "STKCURR") in ls.public_headers
+    assert ("tr_cd", "t1102") in ls.public_headers
+    assert all(name != "tr_id" for name, _ in ls.public_headers)  # not the onboarding demo
     assert ("cont_yn", "") in db.public_headers
     assert toss.public_headers == () and meritz.public_headers == ()
     assert kis.auth.quote_header_names == ("authorization", "appkey", "appsecret")
@@ -140,7 +137,7 @@ def test_post_bodies_are_exactly_evidenced_and_not_unauthorized_order_calls() ->
     assert json.loads(d.json_body) == {
         "In": {"InputCondMrktDivCode": "J", "InputIscd1": "A005930"}
     }
-    for broker in ("kis", "ls", "toss", "meritz"):
+    for broker in ("kis", "toss", "meritz"):
         plan = plan_ticker_request(broker, "005930", venue="KRX", environment="live")
         assert plan.json_body is None and plan.method == "GET"
     assert all("/order" not in EXPECTED[b][2] for b in BROKERS)
@@ -265,3 +262,23 @@ def test_mock_http_success_is_not_evidence_of_broker_venue_or_source() -> None:
     assert plan.venue == "KRX"
     assert plan.transport_implemented is False
     assert plan.evidence_level == "publisher_quote_example"
+
+
+def test_ls_t1102_body_always_names_krx_explicitly() -> None:
+    # LS treats an unknown exchgubun as KRX; never leave the venue implicit.
+    ls = plan_ticker_request("ls", "005930", venue="KRX", environment="live")
+    assert json.loads(ls.json_body) == {
+        "t1102InBlock": {"shcode": "005930", "exchgubun": "K"}
+    }
+    assert dict(ls.public_headers) == {
+        "content-type": "application/json; charset=utf-8",
+        "tr_cd": "t1102",
+        "tr_cont": "N",
+        "tr_cont_key": "",
+        "mac_address": "",
+    }
+    for venue in ("NXT", "SOR", "COMPOSITE"):
+        with pytest.raises(QuotePlanUnavailable):
+            plan_ticker_request("ls", "005930", venue=venue, environment="live")
+    with pytest.raises(QuotePlanUnavailable):
+        plan_ticker_request("ls", "005930", venue="KRX", environment="paper")

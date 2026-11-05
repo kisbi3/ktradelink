@@ -18,7 +18,7 @@ fn six_brokers_have_distinct_documented_candidate_fields() {
     let samples = [
         ("kis", r#"{"rt_cd":"0","output":{"stck_prpr":"72000.00","stck_oprc":"71900","stck_hgpr":"72400","stck_lwpr":"71600","acml_vol":"0"}}"#),
         ("kiwoom", r#"{"return_code":0,"stk_cd":"005930","cur_prc":"72000.00","open_pric":"71900","high_pric":"72400","low_pric":"71600","trde_qty":"0"}"#),
-        ("ls", r#"{"shcode":"005930","hname":"synthetic","price":72000}"#),
+        ("ls", r#"{"rsp_cd":"00000","t1102OutBlock":{"shcode":"005930","hname":"synthetic","price":72000,"volume":0}}"#),
         ("db", r#"{"rsp_cd":"00000","Out":{"Prpr":"72000.00","Oprc":"71900","Hprc":"72400","Lprc":"71600","Sdpr":"70100"}}"#),
         ("toss", r#"{"result":[{"symbol":"005930","timestamp":"2026-03-25T09:30:00.123+09:00","lastPrice":"72000.00","currency":"KRW"}]}"#),
         ("meritz", r#"{"rsp_cd":"0000","data":{"stck_prpr":"72000.00","oprc":"71900","hprc":"72400","lprc":"71600","acml_vol":"0"}}"#),
@@ -68,7 +68,7 @@ fn signed_kiwoom_prices_and_floating_point_inputs_are_not_guessed() {
     }
     for (id, payload) in [
         ("kis", r#"{"output":{"stck_prpr":72000.25}}"#),
-        ("ls", r#"{"price":72000.25}"#),
+        ("ls", r#"{"rsp_cd":"00000","t1102OutBlock":{"shcode":"005930","price":72000.25}}"#),
         ("db", r#"{"Out":{"Prpr":72000.25}}"#),
     ] {
         let e = decode(Broker::parse(id).unwrap(), "005930", Venue::Krx, payload).unwrap_err();
@@ -124,7 +124,7 @@ fn toss_symbol_selection_is_exact_and_unambiguous() {
 fn request_symbol_mismatch_and_invalid_market_context_are_errors() {
     for (id, payload) in [
         ("kiwoom", r#"{"stk_cd":"000660","cur_prc":"10"}"#),
-        ("ls", r#"{"shcode":"000660","price":"10"}"#),
+        ("ls", r#"{"rsp_cd":"00000","t1102OutBlock":{"shcode":"000660","price":10}}"#),
     ] {
         let e = decode(Broker::parse(id).unwrap(), "005930", Venue::Krx, payload).unwrap_err();
         assert_eq!(e.kind, DecodeKind::AmbiguousSymbol);
@@ -234,7 +234,6 @@ fn malformed_toss_string_types_are_not_classified_as_missing() {
 fn optional_native_identifiers_are_malformed_only_when_present_invalid() {
     for (broker, field, last_field) in [
         (Broker::Kiwoom, "stk_cd", "cur_prc"),
-        (Broker::Ls, "shcode", "price"),
     ] {
         // Missing identifier is a valid synthetic publisher-response candidate.
         let missing = format!(r#"{{"{last_field}":"10"}}"#);
@@ -268,10 +267,44 @@ fn maximum_json_byte_size_accepts_exactly_boundary_not_one_more() {
 }
 
 #[test]
-fn ls_onboarding_accepts_price_text_and_rejects_negative_json_integer() {
-    assert_eq!(last("ls", r#"{"shcode":"005930","price":"72000.00"}"#), "72000.00");
+fn ls_t1102_maps_price_and_volume_only() {
+    // Shape of the publisher's t1102 response example (values synthetic):
+    // before the first trade open/high/low are 0, so they are NOT mapped.
+    let payload = r#"{"t1102OutBlock":{"hname":"synthetic","price":6710,"sign":"3","change":0,"volume":0,"open":0,"high":0,"low":0,"recprice":6710,"shcode":"005930","ex_shcode":"005930"},"rsp_cd":"00000","rsp_msg":"synthetic"}"#;
+    let quote = offline("ls", payload);
+    assert_eq!(quote.input().prices.last.as_ref().unwrap().as_str(), "6710");
+    assert_eq!(quote.input().volume, Some(0));
+    assert!(quote.input().prices.open.is_none());
+    assert!(quote.input().prices.high.is_none());
+    assert!(quote.input().prices.low.is_none());
+    assert!(quote.input().prices.previous_close.is_none());
+}
+
+#[test]
+fn ls_t1102_status_block_and_symbol_are_required() {
+    let cases = [
+        // status must be present and exactly "00000"
+        (r#"{"t1102OutBlock":{"shcode":"005930","price":10}}"#, "rsp_cd", DecodeKind::MissingRequired),
+        (r#"{"rsp_cd":null,"t1102OutBlock":{"shcode":"005930","price":10}}"#, "rsp_cd", DecodeKind::MissingRequired),
+        (r#"{"rsp_cd":"00001","t1102OutBlock":{"shcode":"005930","price":10}}"#, "rsp_cd", DecodeKind::SourceStatus),
+        (r#"{"rsp_cd":0,"t1102OutBlock":{"shcode":"005930","price":10}}"#, "rsp_cd", DecodeKind::SourceStatus),
+        // the onboarding demo's flat shape is no longer accepted
+        (r#"{"rsp_cd":"00000","shcode":"005930","price":10}"#, "t1102OutBlock", DecodeKind::MissingRequired),
+        (r#"{"rsp_cd":"00000","t1102OutBlock":[]}"#, "t1102OutBlock", DecodeKind::InvalidEnvelope),
+        // the echoed symbol is required and must match
+        (r#"{"rsp_cd":"00000","t1102OutBlock":{"price":10}}"#, "shcode", DecodeKind::MissingRequired),
+        (r#"{"rsp_cd":"00000","t1102OutBlock":{"shcode":5930,"price":10}}"#, "shcode", DecodeKind::InvalidField),
+        (r#"{"rsp_cd":"00000","t1102OutBlock":{"shcode":"000660","price":10}}"#, "shcode", DecodeKind::AmbiguousSymbol),
+        // price is unsigned; volume must be a non-negative integer
+        (r#"{"rsp_cd":"00000","t1102OutBlock":{"shcode":"005930","price":-72000}}"#, "price", DecodeKind::InvalidPrice),
+        (r#"{"rsp_cd":"00000","t1102OutBlock":{"shcode":"005930"}}"#, "price", DecodeKind::MissingRequired),
+        (r#"{"rsp_cd":"00000","t1102OutBlock":{"shcode":"005930","price":10,"volume":-1}}"#, "volume", DecodeKind::InvalidField),
+    ];
+    for (payload, field, kind) in cases {
+        let err = decode(Broker::Ls, "005930", Venue::Krx, payload).unwrap_err();
+        assert_eq!((err.field, err.kind), (field, kind), "{payload}");
+    }
     let err = decode(Broker::Ls, "005930", Venue::Krx,
-        r#"{"shcode":"005930","price":-72000}"#).unwrap_err();
-    assert_eq!(err.field, "price");
-    assert_eq!(err.kind, DecodeKind::InvalidPrice);
+        r#"{"rsp_cd":"secret-response","t1102OutBlock":{"shcode":"005930","price":10}}"#).unwrap_err();
+    assert!(!err.to_string().contains("secret-response"));
 }

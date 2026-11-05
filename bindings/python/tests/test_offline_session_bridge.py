@@ -20,7 +20,7 @@ from ktradelink.models import Ticker
 PAYLOADS = {
     "kis": '{"rt_cd":"0","output":{"stck_prpr":"72000.00","acml_vol":"0"}}',
     "kiwoom": '{"return_code":0,"stk_cd":"005930","cur_prc":"72000.00"}',
-    "ls": '{"shcode":"005930","price":"72000.00"}',
+    "ls": '{"rsp_cd":"00000","t1102OutBlock":{"shcode":"005930","price":"72000.00"}}',
     "db": '{"rsp_cd":"00000","Out":{"Prpr":"72000.00"}}',
     "toss": '{"result":[{"symbol":"005930","currency":"KRW","lastPrice":"72000.00"}]}',
     "meritz": '{"rsp_cd":"0000","data":{"stck_prpr":"72000.00"}}',
