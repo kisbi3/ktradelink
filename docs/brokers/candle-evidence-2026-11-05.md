@@ -16,6 +16,9 @@
     fixed commit.
   - Toss and Meritz portal pages: 06:43–06:49. The Meritz GitHub
     repository was fetched at a fixed commit.
+  - Toss FAQ (T5): first retrieved 07:11:21 for the trade audit and
+    re-fetched 07:45:23 for this revision; both copies have the same
+    sha256.
 - **Pin formats:**
   - Git blob SHAs are `sha1("blob <len>\0" + bytes)` of the retrieved
     bytes, i.e. what `git hash-object` prints.
@@ -31,6 +34,9 @@
     publisher calls the route; it is **not** a contract.
   - `publisher repo note`: non-code text in a publisher repository that
     defers to the portal (§7.1).
+  - `publisher guide`: portal prose outside the API specification (the
+    Toss FAQ, T5). It ranks **below** `field table`; T5 L3 itself defers
+    to the API reference.
   - `not found`.
 - Every inference is marked **Inference:**. "Not documented" means the pinned
   sources say nothing about it.
@@ -790,6 +796,7 @@ There is no `tr_cd` header; the route selects the TR.
 | T2 | [Toss overview.md](https://openapi.tossinvest.com/openapi-docs/overview.md) | sha256 `bef057d9babe9a38…`, 06:48:59Z | "Rate Limits" table (`MARKET_DATA_CHART` at L251 of the retrieved copy) |
 | T3 | [Toss AsyncAPI JSON](https://openapi.tossinvest.com/openapi-docs/latest/asyncapi.json) | sha256 `46669a360d4c5c64…`, 06:43–06:44Z; `asyncapi 3.0.0`, `info.version 1.2.3` | Negative check only: no candle channel |
 | T4 | [developers.tossinvest.com/llms.txt](https://developers.tossinvest.com/llms.txt) | sha256 `bbff77eaa55df248…`, 06:48:54Z | Says the OpenAPI JSON is "the source of truth for endpoints, schemas, … and rate limits" and links T2 |
+| T5 | [Toss FAQ faq.md](https://openapi.tossinvest.com/openapi-docs/faq.md) | sha256 `6ad4c02b8e785f7d…`, 07:11:21Z and re-fetched 07:45:23Z (same hash); no visible revision marker | `publisher guide` only: L3 (defers to the API reference), L22 (venue), L25 (`1m` session coverage), L28 (in-progress bar) |
 
 ### 6.2 Routes by interval
 
@@ -845,14 +852,29 @@ There is no `tr_cd` header; the route selects the TR.
   `2026-03-25T00:00:00+09:00`.
   - **Inference:** for KRX symbols, "현지" means KST.
 - **Time zone:** carried in the offset.
-- **Current incomplete bar:** not documented.
+- **Current incomplete bar:** not in T1. T5 L28 (publisher guide) says
+  differing minute volumes are usually from querying "아직 끝나지 않은
+  분(진행 중인 봉)", and that they match "봉이 완성된 뒤 다시 조회하면".
+  - **Inference:** an in-progress `1m` bar can be returned and changes
+    until complete. Not stated in the field table.
 - **Week / month / year label:** not applicable; those intervals are not
   offered.
 - **Holidays / suspended days:** not documented for candles.
-- **Pre-market / after-hours / NXT, and which venue the bars aggregate:**
-  not documented for REST candles.
-  - T2 says "국내는 통합 시세(KRX+NXT)만 노출합니다", but only in its
-    WebSocket section. It is **not** applied to REST candles here.
+- **Venue the bars aggregate:** not in the field table (T1). The FAQ
+  (T5 L22, publisher guide) answers "국내 캔들·체결은 KRX 만 집계하나요?"
+  with "KRX + NXT 통합 시세입니다. 거래소를 지정해 조회하는 파라미터나
+  거래소를 식별하는 응답 필드는 없습니다. NXT 에서 거래되지 않는 종목은
+  KRX 시세로 자동 제공됩니다."
+  - So the publisher **documents** REST candles as KRX+NXT integrated,
+    with no per-row venue. This is **not** "KRX only" and **not**
+    live-verified. The evidence level is publisher guide, below the field
+    table.
+  - T2 says "국내는 통합 시세(KRX+NXT)만 노출합니다" in its WebSocket
+    section; it is consistent with T5 but is not itself REST evidence.
+- **Pre-market / after-hours coverage:** T5 L25 (publisher guide): for
+  NXT-traded symbols, `1m` bars cover "08:01 ~ 20:00 (프리마켓 시작 ~
+  애프터마켓 종료)"; otherwise from 09:01 to 20:00 for KRX after-market
+  symbols, else to 15:30. Daily-bar session scope is not documented.
 - **Minute history depth / lookback:** not documented.
 
 ### 6.6 Limits
@@ -1076,7 +1098,7 @@ adds `x-tr-id` and `x-tps` and omits M1's `required` column.
 | Kiwoom REST | unsuffixed `stk_cd` (F) | `0` meaning not stated | `1` 수정주가 적용, valid only for rights events before `base_dt` (F) | required, no default | F: String | not documented (E newest first) |
 | LS | t8451 `exchgubun` `K` (F); t8410 has **no venue field** | `sujung` `N` "비적용" (F) | `sujung` `Y` "적용" (F) | required, no default | F vs E conflict (Number/String) | not documented (E ascending) |
 | DB | `InputCondMrktDivCode` `J` + plain symbol (F) | `InputOrgAdjPrc` `0` "수정주가 미사용" (F) | `1` "수정주가 사용" (F) | marked required; omitted in some examples | F `A0001`; E strings | not documented (E newest first) |
-| Toss | **no venue selector**; venue of REST candles not documented | `adjusted=false` "미적용" (F) | `adjusted=true` "적용" (F) | **`true` (adjusted)** | F: decimal strings | **documented** newest first |
+| Toss | **no venue selector**; FAQ documents KRX+NXT **integrated**, no per-row venue (publisher guide T5 L22; not live-verified) | `adjusted=false` "미적용" (F) | `adjusted=true` "적용" (F) | **`true` (adjusted)** | F: decimal strings | **documented** newest first |
 | Meritz | `mrkt_div_code` `J` is after-market-inclusive. A KRX regular close needs `TJ` + `exch_use_yn=Y`, and its volume still includes the after-market (F). | `mod_stpr_cls_code` `1` "원종가" (F) | `0` "수정종각 (기본값)" (F) | **`0` (adjusted)** | F: Number | **documented** newest first |
 
 **Reading 8.2:**
@@ -1088,7 +1110,8 @@ adds `x-tr-id` and `x-tps` and omits M1's `required` column.
   - None of the six documents both a clean venue and a regular-session
     daily series.
   - LS t8451 `K` and DB `J` select KRX but say nothing about session.
-  - Toss has no venue selector.
+  - Toss has no venue selector, and its FAQ documents the bars as
+    KRX+NXT integrated, so no KRX-only series exists.
   - Meritz `J` is after-market-inclusive by its own documentation.
 - **Defaults:** Toss and Meritz default to **adjusted**. A request plan must
   always send the flag explicitly (G-A1).
@@ -1148,7 +1171,9 @@ written. Broker tags are in brackets.
 
 ### 10.2 Ordering, paging and overlap
 
-- **G-P1:** the decoder sorts by native date/time and rejects duplicates.
+- **G-P1 Within one page:** the decoder sorts by native date/time. Two
+  rows with the same bar time in one response are an error, never
+  silently dropped or merged.
   - Order is documented only for [Toss] and [Meritz] (newest first).
   - [Kiwoom] and [DB] examples are newest first; [LS] examples are
     ascending; [KIS] is undocumented.
@@ -1159,7 +1184,11 @@ written. Broker tags are in brackets.
   - [LS] `cts_*` points just before the oldest row; inclusion is
     undocumented.
   - [Kiwoom] and [DB] use header cursors with undocumented boundaries.
-  - Deduplicate by timestamp and detect gaps.
+  - **Across pages only**, a bar repeated at the page boundary may be
+    removed when every field (OHLCV, value, flags) is identical. If the
+    repeated bar time carries different values, raise an error rather
+    than keep either row; an in-progress bar is a known cause (T5 L28).
+  - Detect gaps.
 - **G-P3 Completeness:** use a finite page budget and raise
   `IncompleteMarketData` rather than truncate.
   - [KIS] D/W/M/Y has no continuation key; which end of an over-100 window
@@ -1225,7 +1254,9 @@ written. Broker tags are in brackets.
     invalid values to KRX, so send it explicitly via t8451/t8452.
   - [DB] needs `InputCondMrktDivCode` **and** the matching `N-`/`U-`
     symbol prefix.
-  - [Toss] has no selector, and its REST candle venue is undocumented.
+  - [Toss] has no selector. Its FAQ (T5 L22, publisher guide) documents
+    REST candles as KRX+NXT integrated with no per-row venue. Never label
+    them `KRX`; integrated is publisher-documented, not live-verified.
   - [Kiwoom] `_NX`/`_AL` and [KIS] `NX`/`UN` are not equivalent without
     evidence.
   - Ship KRX only first.
@@ -1242,7 +1273,9 @@ written. Broker tags are in brackets.
   - [LS] defaults to "전체"; send `krx_mmk_gubun=Y` for regular, and still
     verify.
   - The [DB] and [Meritz] examples contain post-15:30 bars.
-  - [KIS], [Kiwoom] and [Toss] are undocumented.
+  - [KIS] and [Kiwoom] are undocumented. [Toss] `1m` coverage is given
+    only in the FAQ (T5 L25, publisher guide) and extends to 08:01–20:00
+    for NXT-traded symbols.
   - `session="regular"` must error rather than mislabel.
 
 ### 10.5 Week / month / year labels
@@ -1364,9 +1397,11 @@ written. Broker tags are in brackets.
   - whether `openapi.db-fi.com` is an alias of `openapi.dbsec.co.kr`.
 - Toss:
   - whether pages overlap at `before`;
-  - venue and session coverage of REST candles;
+  - live confirmation of the FAQ's KRX+NXT integrated venue and `1m`
+    session coverage (T5, publisher guide only), and daily-bar session
+    scope;
   - the effect of `adjusted` on `1m`;
-  - the in-progress bar.
+  - in-progress bar behaviour beyond the FAQ's description.
 - Meritz:
   - the `rsp_cd` NUL-corruption note;
   - minute bar convention and trading date;
